@@ -22,6 +22,11 @@
   captured one encounter and one reusable solution.
 - 2026-05-28 - Ran release checks: `./scripts/test`, `./scripts/doctor`,
   `./scripts/check-private-identifiers`, and repository file inventory.
+- 2026-05-28 - Created local atomic commits:
+  `e7c69b2 CHORE: seed workbench goal memory`,
+  `0f2c2e0 FEAT: export curated workbench configs`,
+  `85ee428 FEAT: add demo and validation tooling`,
+  `a639da6 DOCS: publish public workbench guide`.
 
 ## Validation Evidence
 
@@ -31,6 +36,7 @@
 | 2026-05-28 | Test suite | `./scripts/test` | pass | privacy scan, demo fixture, and shell syntax checks passed |
 | 2026-05-28 | Doctor | `./scripts/doctor` | pass-with-notes | required tools present; optional `opencode`, `openclaw`, `ghostty`, `wezterm` not installed here |
 | 2026-05-28 | Privacy | `./scripts/check-private-identifiers` | pass | scanner excludes its own denylist file and `.vault` planning artifacts |
+| 2026-05-28 | Git history | `git log --format='%h %s%n%b' --max-count=10` | pass | local commits use uppercase atomic subjects and at most three body bullets |
 
 ## Review Ledger
 
