@@ -8,7 +8,7 @@ This repo is a public, curated version of a private daily-driver setup. It is
 meant to show the shape of the workflow without publishing private overlays,
 host snapshots, live agent state, account details, or raw screenshots.
 
-![Hermes workbench demo](screenshots/hermes-workbench.svg)
+![Hermes workbench demo](screenshots/hermes-demo-wsl.png)
 
 ## What This Is
 

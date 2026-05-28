@@ -1,7 +1,11 @@
 # Screenshots
 
-The files in `screenshots/` are public-safe demo visuals. They are generated
-from neutral text fixtures rather than captured from private work.
+The files in `screenshots/` are public-safe demo visuals. The README uses a
+real Windows/WSL tmux capture from a neutral Hermes demo repo:
+
+- `screenshots/hermes-demo-wsl.png`
+
+The SVG files are generated fallback visuals from neutral text fixtures.
 
 Regenerate them with:
 
