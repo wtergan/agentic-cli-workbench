@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEMO_ROOT="${AGENTIC_WORKBENCH_DEMO_ROOT:-$ROOT/demo/workspace}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  scripts/demo-session prepare
+  scripts/demo-session show [hermes|codex|nav]
+  scripts/demo-session path
+
+Creates neutral demo data and launches public-safe tmux layouts.
+USAGE
+}
+
+prepare_demo_repo() {
+  local repo="$DEMO_ROOT/example-app"
+  mkdir -p "$repo/src" "$repo/docs"
+  printf '# Example App\n\nNeutral demo project for screenshots.\n' > "$repo/README.md"
+  printf 'export function greet(name) {\n  return `hello ${name}`;\n}\n' > "$repo/src/greet.js"
+  printf 'Workbench notes for public demo captures.\n' > "$repo/docs/workflow.md"
+
+  if [ ! -d "$repo/.git" ]; then
+    git -C "$repo" init -b main >/dev/null
+    git -C "$repo" config user.name "Demo Author"
+    git -C "$repo" config user.email "demo@example.invalid"
+    git -C "$repo" add .
+    git -C "$repo" commit -m "FEAT: seed demo project" >/dev/null
+  fi
+
+  echo "$repo"
+}
+
+mock_agent_command() {
+  local mode="$1"
+  printf 'printf "\\033[2J\\033[H"; '
+  printf 'echo "%s AGENT DEMO"; ' "${mode^^}"
+  printf 'echo; echo "Available tools: edit, search, test, review"; '
+  printf 'echo "Session: public-safe demo"; '
+  printf 'echo; echo "Ask me to inspect the repo or plan the next change."; '
+  printf 'exec ${SHELL:-bash} -i'
+}
+
+show_session() {
+  local mode="${1:-hermes}"
+  local repo
+  repo="$(prepare_demo_repo)"
+
+  local script_dir="$ROOT/configs/shared/term-scripts"
+  local session="demo-${mode}"
+  local agent_command
+  agent_command="$(mock_agent_command "$mode")"
+
+  case "$mode" in
+    hermes)
+      IDE_DEFAULT_SESSION_NAME="$session" \
+      IDE_AGENT_WINDOW_NAME="hermes" \
+      IDE_REFERENCE_AGENT_COMMAND="$agent_command" \
+      IDE_AGENT_COMMAND="$agent_command" \
+      "$script_dir/ide" "$session" "$repo"
+      ;;
+    codex)
+      IDE_DEFAULT_SESSION_NAME="$session" \
+      IDE_AGENT_WINDOW_NAME="codex" \
+      IDE_REFERENCE_AGENT_COMMAND="$agent_command" \
+      IDE_AGENT_COMMAND="$agent_command" \
+      "$script_dir/ide" "$session" "$repo"
+      ;;
+    nav)
+      "$ROOT/scripts/demo-yazi-grid" "$session" "$repo"
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+case "${1:-}" in
+  prepare)
+    prepare_demo_repo
+    ;;
+  show)
+    show_session "${2:-hermes}"
+    ;;
+  path)
+    echo "$DEMO_ROOT/example-app"
+    ;;
+  -h|--help|help|"")
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="${1:-.}"
+
+patterns=(
+  'gmail'
+  'wtergan'
+  '/home/gilgames'
+  '/mnt/c/Users'
+  'C:\\Users\\gilgames'
+  '/Users/gilgames'
+  'token[[:space:]]*='
+  'secret[[:space:]]*='
+  'api[_-]?key'
+)
+
+args=()
+for pattern in "${patterns[@]}"; do
+  args+=(-e "$pattern")
+done
+
+if rg -n -i "${args[@]}" \
+  --glob '!.git/**' \
+  --glob '!*.sample' \
+  --glob '!.vault/**' \
+  --glob '!scripts/check-private-identifiers' \
+  "$root"; then
+  echo "Private-identifier scan found matches." >&2
+  exit 1
+fi
+
+echo "Private-identifier scan passed."

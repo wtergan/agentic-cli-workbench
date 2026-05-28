@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-label="Codex Navigation Workbench">
+  <rect width="1600" height="900" fill="#f6f1e8"/>
+  <rect x="24" y="24" width="1552" height="852" rx="10" fill="#fbf7ef" stroke="#7a6a58" stroke-width="2"/>
+  <text x="48" y="72" font-family="Iosevka, Menlo, monospace" font-size="28" fill="#5f5145">Codex Navigation Workbench</text>
+  <rect x="48" y="104" width="920" height="720" fill="#fffaf2" stroke="#a67c7c" stroke-width="2"/>
+  <rect x="992" y="104" width="560" height="342" fill="#fffaf2" stroke="#6d7f5f" stroke-width="2"/>
+  <rect x="992" y="482" width="560" height="342" fill="#fffaf2" stroke="#6d7f5f" stroke-width="2"/>
+  <text x="80" y="158" font-family="Iosevka, Menlo, monospace" font-size="34" fill="#9b5757">CODEX AGENT</text>
+  <text x="1024" y="158" font-family="Iosevka, Menlo, monospace" font-size="28" fill="#235aa6">yazi</text>
+  <text x="1024" y="536" font-family="Iosevka, Menlo, monospace" font-size="28" fill="#236b34">lazygit</text>
+  <text x="80" y="226" font-family="Iosevka, Menlo, monospace" font-size="22" fill="#6a6258">Available tools: search, edit, test, review</text>
+  <text x="80" y="268" font-family="Iosevka, Menlo, monospace" font-size="22" fill="#6a6258">Session: public-safe demo</text>
+  <text x="1024" y="214" font-family="Iosevka, Menlo, monospace" font-size="20" fill="#444">example-app/</text>
+  <text x="1024" y="252" font-family="Iosevka, Menlo, monospace" font-size="20" fill="#444">  src/greet.js</text>
+  <text x="1024" y="290" font-family="Iosevka, Menlo, monospace" font-size="20" fill="#444">  docs/workflow.md</text>
+  <text x="1024" y="592" font-family="Iosevka, Menlo, monospace" font-size="20" fill="#444">main ✓ clean</text>
+  <text x="1024" y="630" font-family="Iosevka, Menlo, monospace" font-size="20" fill="#444">FEAT: seed demo project</text>
+  <rect x="48" y="836" width="1504" height="28" fill="#66645d"/>
+  <text x="68" y="856" font-family="Iosevka, Menlo, monospace" font-size="18" fill="#f8e8a0">tmux: agentic-cli-workbench demo</text>
+</svg>

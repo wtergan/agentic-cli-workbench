@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+session="${1:-demo-nav}"
+workdir="${2:-.}"
+
+if tmux has-session -t "$session" 2>/dev/null; then
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$session"
+  else
+    tmux attach-session -t "$session"
+  fi
+  exit 0
+fi
+
+tmux new-session -d -s "$session" -c "$workdir" -n nav
+tmux split-window -h -t "$session:nav" -c "$workdir"
+tmux split-window -v -t "$session:nav.2" -c "$workdir"
+tmux split-window -v -t "$session:nav.1" -c "$workdir"
+
+for pane in 1 2 3; do
+  if command -v yazi >/dev/null 2>&1; then
+    tmux send-keys -t "$session:nav.$pane" "clear; yazi" Enter
+  else
+    tmux send-keys -t "$session:nav.$pane" "clear; pwd; find . -maxdepth 2 -type f | sort; exec \${SHELL:-bash} -i" Enter
+  fi
+done
+
+if command -v lazygit >/dev/null 2>&1; then
+  tmux send-keys -t "$session:nav.4" "clear; lazygit" Enter
+else
+  tmux send-keys -t "$session:nav.4" "clear; git status --short; exec \${SHELL:-bash} -i" Enter
+fi
+
+tmux select-pane -t "$session:nav.1"
+
+if [ -n "${TMUX:-}" ]; then
+  tmux switch-client -t "$session"
+else
+  tmux attach-session -t "$session"
+fi
+
