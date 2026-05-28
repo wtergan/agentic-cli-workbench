@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export IDE_DEFAULT_SESSION_NAME="codex"
+export IDE_AGENT_WINDOW_NAME="codex"
+export IDE_AGENT_COMMAND="codex"
+exec "$(dirname "$0")/ide" "$@"

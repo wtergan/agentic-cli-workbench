@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# tmux-validate - Validate tmux IDE workflow setup.
+
+ERRORS=0
+WARNINGS=0
+
+echo "Validating tmux IDE workflow setup..."
+echo
+
+echo "Checking tmux configuration..."
+TMUX_CONF="$HOME/.config/tmux/tmux.conf"
+if [ -f "$TMUX_CONF" ]; then
+  if grep -q "run-shell \"ide " "$TMUX_CONF"; then
+    echo "  OK tmux.conf found with ide binding"
+  else
+    echo "  WARN tmux.conf found but ide binding is missing"
+    WARNINGS=$((WARNINGS + 1))
+  fi
+else
+  echo "  ERROR tmux.conf not found at ~/.config/tmux/tmux.conf"
+  ERRORS=$((ERRORS + 1))
+fi
+echo
+
+echo "Checking helper scripts..."
+SCRIPTS=("ide" "tmux-fzf-file" "tmux-fzf-rg" "tmux-validate")
+for script in "${SCRIPTS[@]}"; do
+  if [ -x "$HOME/.local/bin/$script" ]; then
+    echo "  OK $script found and executable"
+  elif [ -f "$HOME/.local/bin/$script" ]; then
+    echo "  WARN $script found but not executable"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    echo "  ERROR $script not found in ~/.local/bin"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+echo
+
+echo "Checking terminal configs..."
+GHOSTTY_FOUND=0
+GHOSTTY_PATHS=(
+  "$HOME/.config/ghostty/config"
+  "$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+)
+for path in "${GHOSTTY_PATHS[@]}"; do
+  if [ -f "$path" ]; then
+    echo "  OK Ghostty config found: $path"
+    GHOSTTY_FOUND=1
+  fi
+done
+if [ "$GHOSTTY_FOUND" -eq 0 ]; then
+  echo "  WARN Ghostty config not found (expected on macOS setups)"
+  WARNINGS=$((WARNINGS + 1))
+fi
+
+WEZTERM_FOUND=0
+if [ -f "$HOME/.wezterm.lua" ]; then
+  echo "  OK WezTerm config found: $HOME/.wezterm.lua"
+  WEZTERM_FOUND=1
+fi
+if [ -n "${WINDOWS_HOME:-}" ] && [ -f "$WINDOWS_HOME/.wezterm.lua" ]; then
+  echo "  OK Windows-side WezTerm config found: $WINDOWS_HOME/.wezterm.lua"
+  WEZTERM_FOUND=1
+fi
+if [ "$WEZTERM_FOUND" -eq 0 ]; then
+  echo "  WARN WezTerm config not found"
+  WARNINGS=$((WARNINGS + 1))
+fi
+echo
+
+echo "Checking tmux plugins..."
+if [ -d "$HOME/.config/tmux/plugins/tpm" ]; then
+  echo "  OK TPM installed"
+else
+  echo "  WARN TPM not found at ~/.config/tmux/plugins/tpm"
+  WARNINGS=$((WARNINGS + 1))
+fi
+echo
+
+echo "Validating tmux config syntax..."
+if tmux source-file "$TMUX_CONF" >/tmp/tmux-validate.out 2>&1; then
+  echo "  OK tmux.conf syntax valid"
+else
+  if grep -Eq "Operation not permitted|error connecting to /tmp/tmux-|failed to connect to server" /tmp/tmux-validate.out; then
+    echo "  WARN could not validate tmux config against a live server in this environment"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    echo "  ERROR tmux.conf has syntax errors"
+    sed -n '1,5p' /tmp/tmux-validate.out | sed 's/^/    /'
+    ERRORS=$((ERRORS + 1))
+  fi
+fi
+rm -f /tmp/tmux-validate.out
+echo
+
+echo "Summary:"
+echo "  Errors:   $ERRORS"
+echo "  Warnings: $WARNINGS"
+
+if [ "$ERRORS" -eq 0 ]; then
+  echo
+  echo "Ready. Start with: ide"
+  exit 0
+fi
+
+echo
+echo "Fix errors above before proceeding."
+exit 1

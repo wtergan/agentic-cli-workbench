@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${1:-$PWD}"
+cd "$ROOT"
+
+if command -v fd >/dev/null 2>&1; then
+  FILE_CMD=(fd -t f -H -E .git .)
+elif command -v fdfind >/dev/null 2>&1; then
+  FILE_CMD=(fdfind -t f -H -E .git .)
+elif command -v rg >/dev/null 2>&1; then
+  FILE_CMD=(rg --files --hidden --glob '!.git')
+else
+  FILE_CMD=(find . -type f -not -path '*/.git/*')
+fi
+
+selected="$("${FILE_CMD[@]}" \
+  | fzf --height=100% --layout=reverse --border --prompt='file> ' \
+      --preview 'if command -v bat >/dev/null 2>&1; then bat --style=numbers --color=always --line-range :200 --wrap=character --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" {}; elif command -v batcat >/dev/null 2>&1; then batcat --style=numbers --color=always --line-range :200 --wrap=character --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" {}; else sed -n "1,200p" {} | fold -s -w "${FZF_PREVIEW_COLUMNS:-80}"; fi' || true)"
+
+[ -n "${selected:-}" ] || exit 0
+"${EDITOR:-vim}" "$selected"

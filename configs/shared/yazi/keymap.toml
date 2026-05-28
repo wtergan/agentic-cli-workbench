@@ -1,0 +1,9 @@
+"$schema" = "https://yazi-rs.github.io/schemas/keymap.json"
+
+[mgr]
+# Keep defaults and only append local workflow jumps.
+append_keymap = [
+  { on = [ "g", "w" ], run = "cd ~/Code",               desc = "Go ~/Code" },
+  { on = [ "g", "p" ], run = "cd ~/Code/project",       desc = "Go project" },
+  { on = [ "g", "a" ], run = "cd ~/.config",            desc = "Go ~/.config" },
+]

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${1:-$PWD}"
+cd "$ROOT"
+
+RG_CMD="$(command -v rg || true)"
+if [ -z "$RG_CMD" ]; then
+  echo "rg is required for tmux-fzf-rg" >&2
+  exit 1
+fi
+export RG_CMD
+
+selected="$(
+  fzf --ansi --disabled --height=100% --layout=reverse --border \
+    --prompt='rg> ' \
+    --bind 'start:reload:$RG_CMD --column --line-number --no-heading --smart-case --hidden -g "!.git" "" || true' \
+    --bind 'change:reload:$RG_CMD --column --line-number --no-heading --smart-case --hidden -g "!.git" {q} || true' \
+    --delimiter=':' \
+    --preview 'if command -v bat >/dev/null 2>&1; then bat --style=numbers --color=always --highlight-line {2} --wrap=character --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" {1}; elif command -v batcat >/dev/null 2>&1; then batcat --style=numbers --color=always --highlight-line {2} --wrap=character --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" {1}; else sed -n "1,200p" {1} | nl -ba -w6 -s" " | fold -s -w "${FZF_PREVIEW_COLUMNS:-80}"; fi' \
+    --preview-window 'up,60%,border-bottom,+{2}+3/3' || true
+)"
+
+[ -n "${selected:-}" ] || exit 0
+file="$(printf '%s' "$selected" | awk -F: '{print $1}')"
+line="$(printf '%s' "$selected" | awk -F: '{print $2}')"
+"${EDITOR:-vim}" "+${line:-1}" "$file"

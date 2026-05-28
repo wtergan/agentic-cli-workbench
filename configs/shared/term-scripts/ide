@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ide - Create or attach an IDE tmux session.
+# Usage: ide [session_name] [working_directory]
+
+DEFAULT_SESSION_NAME="${IDE_DEFAULT_SESSION_NAME:-ide}"
+DEFAULT_AGENT_COMMAND="${IDE_AGENT_COMMAND:-zsh -i}"
+REFERENCE_AGENT_COMMAND="${IDE_REFERENCE_AGENT_COMMAND:-$DEFAULT_AGENT_COMMAND}"
+AGENT_WINDOW_NAME="${IDE_AGENT_WINDOW_NAME:-$DEFAULT_SESSION_NAME}"
+
+SESSION_NAME="${1:-$DEFAULT_SESSION_NAME}"
+WORKDIR="${2:-.}"
+MAIN_WINDOW_ONE="1"
+MAIN_WINDOW_TWO="2"
+
+attach_or_switch() {
+  local target_session="${1:-$SESSION_NAME}"
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$target_session"
+  elif [ -t 0 ] && [ -t 1 ]; then
+    tmux attach-session -t "$target_session"
+  else
+    echo "Session ready: $target_session"
+    echo "Attach with: tmux attach -t $target_session"
+  fi
+}
+
+launch_agent_command() {
+  tmux send-keys -t "$1" "clear; $DEFAULT_AGENT_COMMAND" Enter
+}
+
+launch_reference_agent_command() {
+  tmux send-keys -t "$1" "clear; $REFERENCE_AGENT_COMMAND" Enter
+}
+
+create_reference_window() {
+  local window_name="$1"
+
+  tmux split-window -h -t "$SESSION_NAME:$window_name" -c "$WORKDIR"
+  tmux split-window -v -t "$SESSION_NAME:$window_name.2" -c "$WORKDIR"
+
+  launch_reference_agent_command "$SESSION_NAME:$window_name.1"
+
+  if command -v yazi >/dev/null 2>&1; then
+    tmux send-keys -t "$SESSION_NAME:$window_name.2" "clear; yazi" Enter
+  else
+    tmux send-keys -t "$SESSION_NAME:$window_name.2" "clear; zsh -i" Enter
+  fi
+
+  if command -v lazygit >/dev/null 2>&1; then
+    tmux send-keys -t "$SESSION_NAME:$window_name.3" "clear; lazygit" Enter
+  else
+    tmux send-keys -t "$SESSION_NAME:$window_name.3" "clear; zsh -i" Enter
+  fi
+}
+
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  attach_or_switch
+  exit 0
+fi
+
+tmux new-session -d -s "$SESSION_NAME" -c "$WORKDIR" -n "$MAIN_WINDOW_ONE"
+create_reference_window "$MAIN_WINDOW_ONE"
+
+tmux new-window -n "$MAIN_WINDOW_TWO" -t "$SESSION_NAME" -c "$WORKDIR"
+create_reference_window "$MAIN_WINDOW_TWO"
+
+tmux new-window -n "$AGENT_WINDOW_NAME" -t "$SESSION_NAME" -c "$WORKDIR"
+launch_agent_command "$SESSION_NAME:$AGENT_WINDOW_NAME"
+
+tmux select-window -t "$SESSION_NAME:$AGENT_WINDOW_NAME"
+tmux select-pane -t "$SESSION_NAME:$AGENT_WINDOW_NAME.1"
+
+attach_or_switch

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export IDE_DEFAULT_SESSION_NAME="opencode"
+export IDE_AGENT_WINDOW_NAME="opencode"
+export IDE_AGENT_COMMAND="opencode"
+exec "$(dirname "$0")/ide" "$@"

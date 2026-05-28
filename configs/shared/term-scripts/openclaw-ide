@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export IDE_DEFAULT_SESSION_NAME="openclaw"
+export IDE_AGENT_WINDOW_NAME="openclaw"
+export IDE_AGENT_COMMAND="openclaw"
+exec "$(dirname "$0")/ide" "$@"

@@ -1,0 +1,94 @@
+# This is the configuration file for Ghostty.
+#
+# Ghostty ships
+# with sensible defaults for all options. Users should only need to set
+# options that they want to change from the default.
+#
+# Run `ghostty +show-config --default --docs` to view a list of
+# all available config options and their default values.
+#
+# Additionally, each config option is also explained in detail
+# on Ghostty's website, at https://ghostty.org/docs/config.
+
+# Config syntax crash course
+# ==========================
+# # The config file consists of simple key-value pairs,
+# # separated by equals signs.
+# font-family = Iosevka
+# window-padding-x = 2
+#
+# # Spacing around the equals sign does not matter.
+# # All of these are identical:
+# key=value
+# key= value
+# key =value
+# key = value
+#
+# # Any line beginning with a # is a comment. It's not possible to put
+# # a comment after a config option, since it would be interpreted as a
+# # part of the value. For example, this will have a value of "#123abc":
+# background = #123abc
+#
+# # Empty values are used to reset config keys to default.
+# key =
+#
+# # Some config options have unique syntaxes for their value,
+# # which is explained in the docs for that config option.
+# # Just for example:
+# resize-overlay-duration = 4s 200ms
+
+# =============================================================================
+# FONT RENDERING & DISPLAY
+# =============================================================================
+# Font configuration for terminal clarity and readability
+font-family = IosevkaTerm Nerd Font
+font-size = 13
+font-style = Bold
+font-thicken = true
+font-thicken-strength = 110
+alpha-blending = linear-corrected
+
+# =============================================================================
+# THEME SETTINGS (Optimized for agent workflows)
+# =============================================================================
+# Keep this include so `ghosttheme` can persist a selected theme across
+# config sync runs without editing this managed file directly.
+config-file = "theme-current.conf"
+
+# =============================================================================
+# WINDOW & PANE APPEARANCE (Agent-focused layout)
+# =============================================================================
+# Keep a titlebar so the window can be moved normally
+window-decoration = true
+window-padding-x = 10
+window-padding-y = 10
+
+# Titlebar integration (shows agent context)
+macos-titlebar-style = tabs
+
+# =============================================================================
+# CURSOR & SELECTION STYLING
+# =============================================================================
+# Cursor styling for clear pane identification
+cursor-style = block
+cursor-style-blink = true
+cursor-opacity = 0.8
+
+# Selection color with transparency for layer visibility
+selection-background = #a078ff
+selection-foreground = #ffffff
+# Always let Shift+drag escape app mouse capture so selection works consistently in tmux/Yazi.
+mouse-shift-capture = never
+
+# =============================================================================
+# PERFORMANCE & RENDERING
+# =============================================================================
+# Enable GPU acceleration for smooth rendering
+# (Important for transparent panes and blur effects)
+mouse-scroll-multiplier = 1
+
+# =============================================================================
+# KEYBINDS FOR AGENT WORKFLOW INTEGRATION
+# =============================================================================
+# Map Shift+Enter to send a newline without immediate submission
+keybind = shift+enter=text:\n

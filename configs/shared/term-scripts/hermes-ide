@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export IDE_DEFAULT_SESSION_NAME="hermes"
+export IDE_AGENT_WINDOW_NAME="hermes"
+export IDE_REFERENCE_AGENT_COMMAND="hermes --tui"
+export IDE_AGENT_COMMAND="hermes"
+exec "$(dirname "$0")/ide" "$@"

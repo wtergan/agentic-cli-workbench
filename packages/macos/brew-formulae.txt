@@ -1,0 +1,16 @@
+git
+ripgrep
+fd
+fzf
+jq
+tmux
+zsh
+node
+yazi
+lazygit
+zoxide
+eza
+bat
+git-delta
+tealdeer
+btop

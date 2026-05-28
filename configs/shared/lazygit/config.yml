@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jesseduffield/lazygit/master/schema/config.json
+
+gui:
+  # Keep diffs readable when lazygit runs in the lower-right pane.
+  sidePanelWidth: 0.25
+  expandFocusedSidePanel: true
+  expandedSidePanelWeight: 2
+  mainPanelSplitMode: flexible
+  wrapLinesInStagingView: true
+  useHunkModeInStagingView: true
+
+  # Nerd Font enabled (IosevkaTerm Nerd Font)
+  nerdFontsVersion: "3"
+  showIcons: true
+  showFileIcons: true
+
+  showFileTree: true
+  showCommandLog: true
+  showRandomTip: false
+  splitDiff: auto
+  border: rounded
+
+git:
+  autoFetch: true
+  autoRefresh: true
+  fetchAll: true
+  mainBranches: [main, master, develop]
+
+refresher:
+  refreshInterval: 10
+  fetchInterval: 60
+
+confirmOnQuit: false
+quitOnTopLevelReturn: false

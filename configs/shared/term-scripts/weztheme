@@ -1,0 +1,892 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_URL="https://github.com/mbadolato/iTerm2-Color-Schemes.git"
+REPO_DIR="${WEZTHEME_REPO_DIR:-$HOME/.local/share/iTerm2-Color-Schemes}"
+DYNAMIC_DIR="$REPO_DIR/dynamic-colors"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wezterm"
+STATE_SCRIPT="$CONFIG_DIR/dynamic-theme-current.sh"
+STATE_NAME="$CONFIG_DIR/dynamic-theme-current.txt"
+STATE_MODE="$CONFIG_DIR/dynamic-theme-mode.txt"
+LIGHT_SCRIPT="$CONFIG_DIR/dynamic-theme-light.sh"
+LIGHT_NAME="$CONFIG_DIR/dynamic-theme-light.txt"
+DARK_SCRIPT="$CONFIG_DIR/dynamic-theme-dark.sh"
+DARK_NAME="$CONFIG_DIR/dynamic-theme-dark.txt"
+VIM_COLOR_DIR="${HOME}/.vim/colors"
+VIM_COLOR_FILE="$VIM_COLOR_DIR/weztheme.vim"
+NVIM_COLOR_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvim/colors"
+NVIM_COLOR_FILE="$NVIM_COLOR_DIR/weztheme.vim"
+TMUX_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tmux"
+TMUX_THEME_FILE="$TMUX_CONFIG_DIR/theme.conf"
+
+usage() {
+  cat <<'EOF'
+weztheme - Apply dynamic WezTerm color schemes from iTerm2-Color-Schemes.
+
+Usage:
+  weztheme                        # Interactive selection (fzf with live preview)
+  weztheme --set <name>           # Apply scheme by name
+  weztheme --mode <mode>          # Apply persisted light/dark/toggle mode
+  weztheme --set-light <name>     # Set the default light-mode theme
+  weztheme --set-dark <name>      # Set the default dark-mode theme
+  weztheme --show-mode-themes     # Show configured light/dark defaults
+  weztheme --list                 # List available schemes
+  weztheme --refresh              # Pull latest scheme repo
+  weztheme --clear                # Remove persisted scheme
+  weztheme --no-persist           # Apply only for current terminal
+
+Notes:
+  - Dynamic colors apply to the current terminal instance.
+  - Interactive selection previews themes live as you move through the list.
+  - By default, selected scheme is persisted and auto-applied in new WezTerm shells.
+  - Light/dark defaults are stored in ~/.config/wezterm/dynamic-theme-{light,dark}.txt.
+EOF
+}
+
+ensure_repo() {
+  mkdir -p "$(dirname "$REPO_DIR")"
+  if [ ! -d "$REPO_DIR/.git" ]; then
+    git clone --depth 1 "$REPO_URL" "$REPO_DIR" >/dev/null
+  fi
+}
+
+refresh_repo() {
+  ensure_repo
+  git -C "$REPO_DIR" pull --ff-only --quiet || true
+}
+
+list_schemes() {
+  ensure_repo
+  find "$DYNAMIC_DIR" -maxdepth 1 -type f -name '*.sh' -printf '%f\n' \
+    | sed 's/\.sh$//' \
+    | sort
+}
+
+scheme_palette() {
+  local scheme_file="$1"
+  local line4
+  line4="$(grep -m1 '\\033]4;' "$scheme_file" || true)"
+  [ -n "$line4" ] || return 1
+  printf '%s\n' "$line4" | grep -oE '[0-9]{1,2};#[0-9A-Fa-f]{6}'
+}
+
+scheme_palette_color() {
+  local scheme_file="$1"
+  local index="$2"
+  scheme_palette "$scheme_file" | awk -F ';' -v idx="$index" '$1 == idx { print $2; exit }'
+}
+
+scheme_background_hex() {
+  local scheme_file="$1"
+  local line10
+  line10="$(grep -m1 '\\033]10;' "$scheme_file" || true)"
+  [ -n "$line10" ] || return 1
+  printf '%s\n' "$line10" | grep -oE '#[0-9A-Fa-f]{6}' | sed -n '2p'
+}
+
+scheme_category() {
+  local scheme_file="$1"
+  local bg
+  bg="$(scheme_background_hex "$scheme_file" || true)"
+  [ -n "$bg" ] || {
+    printf '%s\n' 'unknown'
+    return 0
+  }
+
+  if [ "$(hex_luminance "$bg")" -ge 128 ]; then
+    printf '%s\n' 'light'
+  else
+    printf '%s\n' 'dark'
+  fi
+}
+
+list_schemes_categorized() {
+  ensure_repo
+  local scheme_file scheme_name category
+  while IFS= read -r scheme_name; do
+    scheme_file="$DYNAMIC_DIR/$scheme_name.sh"
+    [ -f "$scheme_file" ] || continue
+    category="$(scheme_category "$scheme_file")"
+    printf '%s\t%s\n' "$category" "$scheme_name"
+  done < <(list_schemes)
+}
+
+resolve_scheme_file() {
+  local name="$1"
+  local file="$DYNAMIC_DIR/$name.sh"
+  if [ -f "$file" ]; then
+    printf '%s\n' "$file"
+    return 0
+  fi
+
+  local match
+  match="$(list_schemes | rg -Fxi --max-count 1 "$name" || true)"
+  if [ -n "$match" ] && [ -f "$DYNAMIC_DIR/$match.sh" ]; then
+    printf '%s\n' "$DYNAMIC_DIR/$match.sh"
+    return 0
+  fi
+
+  return 1
+}
+
+detect_windows_home() {
+  if [ -n "${WEZTHEME_WINDOWS_HOME:-}" ]; then
+    printf '%s\n' "$WEZTHEME_WINDOWS_HOME"
+    return 0
+  fi
+
+  if command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    local windows_home
+    windows_home="$(cmd.exe /C "echo %UserProfile%" 2>/dev/null | tr -d '\r')"
+    if [ -n "$windows_home" ]; then
+      wslpath "$windows_home"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+windows_config_dir() {
+  local windows_home
+  windows_home="$(detect_windows_home || true)"
+  [ -n "$windows_home" ] || return 1
+  printf '%s/.config/wezterm\n' "$windows_home"
+}
+
+persist_windows_file() {
+  local source_file="$1"
+  local target_name="$2"
+  local win_config_dir
+
+  win_config_dir="$(windows_config_dir || true)"
+  [ -n "$win_config_dir" ] || return 0
+
+  mkdir -p "$win_config_dir"
+  cp -f "$source_file" "$win_config_dir/$target_name"
+}
+
+persist_windows_text() {
+  local target_name="$1"
+  local value="$2"
+  local win_config_dir
+
+  win_config_dir="$(windows_config_dir || true)"
+  [ -n "$win_config_dir" ] || return 0
+
+  mkdir -p "$win_config_dir"
+  printf '%s\n' "$value" > "$win_config_dir/$target_name"
+}
+
+default_mode_theme() {
+  case "$1" in
+    light) printf '%s\n' 'Farmhouse Light' ;;
+    dark) printf '%s\n' 'Vibrant Ink' ;;
+    *)
+      echo "Unsupported mode: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+mode_script_path() {
+  case "$1" in
+    light) printf '%s\n' "$LIGHT_SCRIPT" ;;
+    dark) printf '%s\n' "$DARK_SCRIPT" ;;
+    *)
+      echo "Unsupported mode: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+mode_name_path() {
+  case "$1" in
+    light) printf '%s\n' "$LIGHT_NAME" ;;
+    dark) printf '%s\n' "$DARK_NAME" ;;
+    *)
+      echo "Unsupported mode: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+read_mode_theme_name() {
+  local mode="$1"
+  local name_file
+
+  name_file="$(mode_name_path "$mode")"
+  if [ -f "$name_file" ]; then
+    head -n 1 "$name_file"
+    return 0
+  fi
+
+  default_mode_theme "$mode"
+}
+
+read_current_mode() {
+  if [ -f "$STATE_MODE" ]; then
+    head -n 1 "$STATE_MODE"
+    return 0
+  fi
+
+  printf '%s\n' 'dark'
+}
+
+read_current_scheme_name() {
+  if [ -f "$STATE_NAME" ]; then
+    head -n 1 "$STATE_NAME"
+    return 0
+  fi
+
+  local current_mode
+  current_mode="$(read_current_mode)"
+  read_mode_theme_name "$current_mode"
+}
+
+persist_mode_theme() {
+  local mode="$1"
+  local file="$2"
+  local name="$3"
+  local script_path name_path
+
+  script_path="$(mode_script_path "$mode")"
+  name_path="$(mode_name_path "$mode")"
+
+  mkdir -p "$CONFIG_DIR"
+  cp -f "$file" "$script_path"
+  chmod +x "$script_path"
+  printf '%s\n' "$name" > "$name_path"
+  persist_windows_file "$file" "$(basename "$script_path")"
+  persist_windows_text "$(basename "$name_path")" "$name"
+}
+
+persist_mode_state() {
+  local mode="$1"
+  mkdir -p "$CONFIG_DIR"
+  printf '%s\n' "$mode" > "$STATE_MODE"
+  persist_windows_text "$(basename "$STATE_MODE")" "$mode"
+}
+
+sync_hermes_skin() {
+  local mode="$1"
+  local skin=""
+
+  case "$mode" in
+    light) skin="${WEZTHEME_HERMES_SKIN_LIGHT:-}" ;;
+    dark) skin="${WEZTHEME_HERMES_SKIN_DARK:-}" ;;
+    *) return 0 ;;
+  esac
+
+  [ -n "$skin" ] || return 0
+
+  if command -v hermes >/dev/null 2>&1; then
+    hermes config set display.skin "$skin" >/dev/null 2>&1 || true
+  fi
+}
+
+persist_scheme() {
+  local file="$1"
+  local name="$2"
+  mkdir -p "$CONFIG_DIR"
+  cp -f "$file" "$STATE_SCRIPT"
+  chmod +x "$STATE_SCRIPT"
+  printf '%s\n' "$name" > "$STATE_NAME"
+  persist_windows_file "$file" "$(basename "$STATE_SCRIPT")"
+  persist_windows_text "$(basename "$STATE_NAME")" "$name"
+}
+
+set_mode_theme_name() {
+  local mode="$1"
+  local requested_name="$2"
+  local scheme_file
+  local normalized_name
+
+  scheme_file="$(resolve_scheme_file "$requested_name" || true)"
+  if [ -z "$scheme_file" ]; then
+    echo "Scheme not found for $mode mode: $requested_name" >&2
+    echo "Run: weztheme --list" >&2
+    exit 1
+  fi
+
+  normalized_name="$(basename "$scheme_file" .sh)"
+  persist_mode_theme "$mode" "$scheme_file" "$normalized_name"
+  echo "Set $mode mode default theme: $normalized_name"
+}
+
+show_mode_themes() {
+  printf 'light: %s\n' "$(read_mode_theme_name light)"
+  printf 'dark:  %s\n' "$(read_mode_theme_name dark)"
+}
+
+clear_persisted() {
+  rm -f "$STATE_SCRIPT" "$STATE_NAME" "$STATE_MODE" "$LIGHT_SCRIPT" "$LIGHT_NAME" "$DARK_SCRIPT" "$DARK_NAME"
+  local win_config_dir
+  win_config_dir="$(windows_config_dir || true)"
+  if [ -n "$win_config_dir" ]; then
+    rm -f \
+      "$win_config_dir/dynamic-theme-current.sh" \
+      "$win_config_dir/dynamic-theme-current.txt" \
+      "$win_config_dir/dynamic-theme-mode.txt" \
+      "$win_config_dir/dynamic-theme-light.sh" \
+      "$win_config_dir/dynamic-theme-light.txt" \
+      "$win_config_dir/dynamic-theme-dark.sh" \
+      "$win_config_dir/dynamic-theme-dark.txt"
+  fi
+  rm -f "$VIM_COLOR_FILE"
+  echo "Cleared persisted WezTerm dynamic theme."
+}
+
+apply_scheme() {
+  local file="$1"
+  # shellcheck disable=SC1090
+  source "$file"
+}
+
+apply_scheme_name() {
+  local name="$1"
+  local scheme_file
+
+  scheme_file="$(resolve_scheme_file "$name" || true)"
+  [ -n "$scheme_file" ] || return 1
+  apply_scheme "$scheme_file"
+}
+
+preview_scheme_name() {
+  local name="$1"
+  [ -n "$name" ] || return 0
+  apply_scheme_name "$name" >/dev/tty 2>/dev/null || true
+}
+
+describe_scheme_name() {
+  local name="$1"
+  local scheme_file category bg line10 colors c1 c2 c3 c4 c5 c6 c7 c8 c11 c14 reset p1 p2 p3 p4 p5 p6 p7 p8 p11 p14
+
+  scheme_file="$(resolve_scheme_file "$name" || true)"
+  if [ -z "$scheme_file" ]; then
+    printf 'Theme not found: %s\n' "$name"
+    return 0
+  fi
+
+  category="$(scheme_category "$scheme_file")"
+  bg="$(scheme_background_hex "$scheme_file" || true)"
+  line10="$(grep -m1 '\\033]10;' "$scheme_file" || true)"
+  colors="$(printf '%s\n' "$line10" | grep -oE '#[0-9A-Fa-f]{6}' | paste -sd ' ' -)"
+
+  c1="$(scheme_palette_color "$scheme_file" 1)"
+  c2="$(scheme_palette_color "$scheme_file" 2)"
+  c3="$(scheme_palette_color "$scheme_file" 3)"
+  c4="$(scheme_palette_color "$scheme_file" 4)"
+  c5="$(scheme_palette_color "$scheme_file" 5)"
+  c6="$(scheme_palette_color "$scheme_file" 6)"
+  c7="$(scheme_palette_color "$scheme_file" 7)"
+  c8="$(scheme_palette_color "$scheme_file" 8)"
+  c11="$(scheme_palette_color "$scheme_file" 11)"
+  c14="$(scheme_palette_color "$scheme_file" 14)"
+  p1="$(hex_to_rgb_triplet "$c1")"
+  p2="$(hex_to_rgb_triplet "$c2")"
+  p3="$(hex_to_rgb_triplet "$c3")"
+  p4="$(hex_to_rgb_triplet "$c4")"
+  p5="$(hex_to_rgb_triplet "$c5")"
+  p6="$(hex_to_rgb_triplet "$c6")"
+  p7="$(hex_to_rgb_triplet "$c7")"
+  p8="$(hex_to_rgb_triplet "$c8")"
+  p11="$(hex_to_rgb_triplet "$c11")"
+  p14="$(hex_to_rgb_triplet "$c14")"
+  reset=$'\033[0m'
+
+  printf 'Theme: %s\n' "$name"
+  printf 'Category: %s\n' "$category"
+  [ -n "$bg" ] && printf 'Background: %s\n' "$bg"
+  [ -n "$colors" ] && printf 'Core colors: %s\n' "$colors"
+  printf '\nCode sample:\n\n'
+
+  printf '  %bdef%b ' "\033[38;2;${p5}m" "$reset"
+  printf '%bbuild_prompt%b' "\033[38;2;${p4}m" "$reset"
+  printf '(%bname%b: %bstr%b) -> %bstr%b:\n' \
+    "\033[38;2;${p7}m" "$reset" \
+    "\033[38;2;${p6}m" "$reset" \
+    "\033[38;2;${p6}m" "$reset"
+  printf '      %bif%b not name:\n' "\033[38;2;${p5}m" "$reset"
+  printf '          %braise%b %bValueError%b(%b"missing name"%b)\n' \
+    "\033[38;2;${p5}m" "$reset" \
+    "\033[38;2;${p1}m" "$reset" \
+    "\033[38;2;${p2}m" "$reset"
+  printf '      prompt = %bf%b%b"Hello, {name}!"%b\n' \
+    "\033[38;2;${p3}m" "$reset" \
+    "\033[38;2;${p2}m" "$reset"
+  printf '      return %bprompt%b  %b# TODO: sync with tmux + nvim%b\n' \
+    "\033[38;2;${p7}m" "$reset" \
+    "\033[38;2;${p8}m" "$reset"
+  printf '\nStatus colors: %bOK%b  %bWARN%b  %bERR%b  %bINFO%b\n' \
+    "\033[38;2;${p2}m" "$reset" \
+    "\033[38;2;${p11}m" "$reset" \
+    "\033[38;2;${p1}m" "$reset" \
+    "\033[38;2;${p14}m" "$reset"
+  printf '\nVim/Neovim:\n  colorscheme weztheme\n  generated file updates when you apply a theme\n'
+}
+
+pick_scheme_interactive() {
+  if ! command -v fzf >/dev/null 2>&1; then
+    echo "fzf is required for interactive mode. Use --set <name> instead." >&2
+    exit 1
+  fi
+
+  local self original_scheme initial_scheme selection exit_status prompt_header preview_cmd current_mode category_query
+  self="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+  original_scheme="$(read_current_scheme_name || true)"
+  initial_scheme="$original_scheme"
+  current_mode="$(read_current_mode)"
+  category_query="$current_mode"
+  if [ -z "$initial_scheme" ]; then
+    initial_scheme="$(read_mode_theme_name "$current_mode")"
+  fi
+
+  prompt_header=$'alt-l: light  alt-d: dark  alt-a: all\nenter: keep  esc: restore previous'
+  preview_cmd="$self --preview-theme {2}"
+
+  selection="$(list_schemes_categorized | fzf \
+    --ansi \
+    --height=80% \
+    --layout=reverse \
+    --border \
+    --prompt='weztheme> ' \
+    --header="$prompt_header" \
+    --delimiter=$'\t' \
+    --with-nth=1,2 \
+    --query="$initial_scheme" \
+    --preview="$self --preview-theme {2} >/dev/tty 2>/dev/null; $self --describe-theme {2}" \
+    --preview-window='right:45%,border-left,wrap' \
+    --bind "start:change-query($category_query)+pos(2)" \
+    --bind 'alt-l:change-query(light )' \
+    --bind 'alt-d:change-query(dark )' \
+    --bind 'alt-a:change-query()' \
+    --bind 'ctrl-l:change-query(light )' \
+    --bind 'ctrl-d:change-query(dark )' \
+    --bind 'ctrl-a:change-query()')"
+  exit_status=$?
+
+  if [ $exit_status -ne 0 ] || [ -z "$selection" ]; then
+    if [ -n "$original_scheme" ]; then
+      preview_scheme_name "$original_scheme"
+    fi
+    return 1
+  fi
+
+  printf '%s\n' "$selection" | awk -F '\t' '{print $2}'
+}
+
+hex_to_rgb_triplet() {
+  local hex="${1#\#}"
+  printf '%d;%d;%d' "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))"
+}
+
+hex_luminance() {
+  local hex="${1#\#}"
+  local r=$((16#${hex:0:2}))
+  local g=$((16#${hex:2:2}))
+  local b=$((16#${hex:4:2}))
+  echo $(( (299 * r + 587 * g + 114 * b) / 1000 ))
+}
+
+mix_hex() {
+  local first="${1#\#}"
+  local second="${2#\#}"
+  local keep_first="${3:-50}"
+  local keep_second=$((100 - keep_first))
+  local r=$(( (16#${first:0:2} * keep_first + 16#${second:0:2} * keep_second) / 100 ))
+  local g=$(( (16#${first:2:2} * keep_first + 16#${second:2:2} * keep_second) / 100 ))
+  local b=$(( (16#${first:4:2} * keep_first + 16#${second:4:2} * keep_second) / 100 ))
+  printf '#%02x%02x%02x\n' "$r" "$g" "$b"
+}
+
+generate_tmux_theme() {
+  local scheme_file="$1"
+  local scheme_name="$2"
+  local line4 line10
+  local -a palette fg_bg_parts
+  local fg bg status_bg accent muted inactive pane_border active_pane_border
+
+  line4="$(grep -m1 '\\033]4;' "$scheme_file" || true)"
+  line10="$(grep -m1 '\\033]10;' "$scheme_file" || true)"
+
+  if [ -z "$line4" ] || [ -z "$line10" ]; then
+    echo "Warning: could not parse dynamic color script for tmux sync: $scheme_name" >&2
+    return 0
+  fi
+
+  while IFS= read -r match; do
+    palette+=("${match#*;}")
+  done < <(printf '%s\n' "$line4" | grep -oE '[0-9]{1,2};#[0-9A-Fa-f]{6}')
+
+  while IFS= read -r h; do
+    fg_bg_parts+=("$h")
+  done < <(printf '%s\n' "$line10" | grep -oE '#[0-9A-Fa-f]{6}')
+
+  if [ "${#palette[@]}" -lt 16 ] || [ "${#fg_bg_parts[@]}" -lt 2 ]; then
+    echo "Warning: parsed insufficient colors for tmux sync: $scheme_name" >&2
+    return 0
+  fi
+
+  fg="${fg_bg_parts[0]:-${palette[7]}}"
+  bg="${fg_bg_parts[1]:-${palette[0]}}"
+  status_bg="default"
+  accent="${palette[12]:-${palette[4]}}"
+  muted="${palette[8]:-${palette[7]}}"
+
+  if [ "$(hex_luminance "$bg")" -ge 128 ]; then
+    status_bg="$(mix_hex "$bg" "#000000" 92)"
+    accent="$(mix_hex "$accent" "$fg" 45)"
+    muted="$(mix_hex "$fg" "$bg" 75)"
+    inactive="$(mix_hex "$fg" "#000000" 88)"
+    pane_border="#9f9a96"
+    active_pane_border="#5f5a57"
+  else
+    inactive="$fg"
+    pane_border="#d4c4e0"
+    active_pane_border="#5c3d7a"
+  fi
+
+  mkdir -p "$TMUX_CONFIG_DIR"
+  cat > "$TMUX_THEME_FILE" <<EOF
+# Auto-generated by weztheme from: $scheme_name
+set -g status-style "bg=#5f5f5f,fg=#e6e6e6"
+set -g status-left "#[fg=#f2c94c,bold]#{session_name}#[fg=#cfcfcf] #{?window_zoomed_flag,🔍 ,}"
+set -g status-right "#[fg=#e6e6e6,bold]#{pane_current_path}:#{pane_current_command} #[fg=#f2c94c,bold]%H:%M"
+set -g window-status-format "#[fg=#d8d8d8]#{window_index}:#{window_name} "
+set -g window-status-current-format "#[fg=#f2c94c,bold,underscore]#{window_index}:#{window_name} "
+set -g window-status-current-style "fg=#f2c94c,bold"
+set -g window-status-activity-style "fg=#f2c94c"
+set -g pane-border-style "fg=$pane_border,bg=default"
+set -g pane-active-border-style "fg=$active_pane_border,bg=default"
+EOF
+}
+
+generate_vim_colorscheme() {
+  local scheme_file="$1"
+  local scheme_name="$2"
+  local line4 line10
+  local -a palette fg_bg_parts
+  local fg bg cursor bg_mode cursorline_bg chrome_bg chrome_bg_alt muted_fg split_fg selection_bg
+  local menu_sel_bg menu_sel_fg search_bg search_fg incsearch_bg incsearch_fg error_bg error_fg warning_bg warning_fg
+
+  line4="$(grep -m1 '\\033]4;' "$scheme_file" || true)"
+  line10="$(grep -m1 '\\033]10;' "$scheme_file" || true)"
+
+  if [ -z "$line4" ] || [ -z "$line10" ]; then
+    echo "Warning: could not parse dynamic color script for Vim sync: $scheme_name" >&2
+    return 0
+  fi
+
+  while IFS= read -r match; do
+    palette+=("${match#*;}")
+  done < <(printf '%s\n' "$line4" | grep -oE '[0-9]{1,2};#[0-9A-Fa-f]{6}')
+
+  if [ "${#palette[@]}" -lt 16 ]; then
+    echo "Warning: parsed ${#palette[@]} palette colors; expected 16. Skipping Vim sync." >&2
+    return 0
+  fi
+
+  while IFS= read -r h; do
+    fg_bg_parts+=("$h")
+  done < <(printf '%s\n' "$line10" | grep -oE '#[0-9A-Fa-f]{6}')
+
+  fg="${fg_bg_parts[0]:-${palette[7]}}"
+  bg="${fg_bg_parts[1]:-${palette[0]}}"
+  cursor="${fg_bg_parts[2]:-${palette[15]}}"
+
+  if [ "$(hex_luminance "$bg")" -ge 128 ]; then
+    bg_mode="light"
+    cursorline_bg="$(mix_hex "$bg" "#000000" 92)"
+    chrome_bg="$cursorline_bg"
+    chrome_bg_alt="$(mix_hex "$bg" "#000000" 96)"
+    muted_fg="$(mix_hex "$fg" "$bg" 75)"
+    split_fg="$(mix_hex "$fg" "$bg" 68)"
+    selection_bg="$(mix_hex "${palette[4]}" "$bg" 20)"
+    menu_sel_bg="$selection_bg"
+    menu_sel_fg="$fg"
+    search_bg="$(mix_hex "${palette[11]}" "$bg" 30)"
+    search_fg="$fg"
+    incsearch_bg="$(mix_hex "${palette[9]}" "$bg" 25)"
+    incsearch_fg="$fg"
+    error_bg="$(mix_hex "${palette[1]}" "$bg" 25)"
+    error_fg="$fg"
+    warning_bg="$search_bg"
+    warning_fg="$fg"
+  else
+    bg_mode="dark"
+    cursorline_bg="${palette[8]}"
+    chrome_bg="${palette[8]}"
+    chrome_bg_alt="${palette[0]}"
+    muted_fg="${palette[7]}"
+    split_fg="${palette[8]}"
+    selection_bg="${palette[8]}"
+    menu_sel_bg="${palette[4]}"
+    menu_sel_fg="$bg"
+    search_bg="${palette[11]}"
+    search_fg="$bg"
+    incsearch_bg="${palette[9]}"
+    incsearch_fg="$bg"
+    error_bg="${palette[1]}"
+    error_fg="${palette[15]}"
+    warning_bg="${palette[11]}"
+    warning_fg="$bg"
+  fi
+
+  mkdir -p "$VIM_COLOR_DIR"
+  cat > "$VIM_COLOR_FILE" <<EOF
+" Auto-generated by weztheme from: $scheme_name
+hi clear
+if exists("syntax_on")
+  syntax reset
+endif
+let g:colors_name = "weztheme"
+set background=$bg_mode
+
+highlight Normal         guifg=$fg      guibg=$bg        ctermfg=15 ctermbg=0
+highlight NormalNC       guifg=$muted_fg guibg=$chrome_bg_alt ctermfg=7  ctermbg=0
+highlight LineNr         guifg=${palette[8]} guibg=$bg    ctermfg=8  ctermbg=0
+highlight CursorLine     guibg=$cursorline_bg              ctermbg=8
+highlight CursorLineNr   guifg=${palette[11]} guibg=$cursorline_bg ctermfg=11 ctermbg=8 cterm=bold gui=bold
+highlight Cursor         guifg=$bg      guibg=$cursor     ctermfg=0  ctermbg=15
+highlight SignColumn     guifg=$fg      guibg=$bg         ctermfg=15 ctermbg=0
+highlight VertSplit      guifg=$split_fg guibg=$bg ctermfg=8 ctermbg=0
+highlight WinSeparator   guifg=$split_fg guibg=$bg ctermfg=8 ctermbg=0
+highlight StatusLine     guifg=$fg      guibg=$chrome_bg ctermfg=15 ctermbg=8 cterm=bold gui=bold
+highlight StatusLineNC   guifg=$muted_fg guibg=$chrome_bg_alt ctermfg=7  ctermbg=0
+highlight Pmenu          guifg=$fg      guibg=$chrome_bg ctermfg=15 ctermbg=8
+highlight PmenuSel       guifg=$menu_sel_fg      guibg=$menu_sel_bg ctermfg=0  ctermbg=4 cterm=bold gui=bold
+highlight NormalFloat    guifg=$fg      guibg=$chrome_bg_alt ctermfg=15 ctermbg=0
+highlight FloatBorder    guifg=$split_fg guibg=$chrome_bg_alt ctermfg=8 ctermbg=0
+highlight Visual         guibg=$selection_bg              ctermbg=8
+highlight Search         guifg=$search_fg      guibg=$search_bg ctermfg=0 ctermbg=11 cterm=bold gui=bold
+highlight IncSearch      guifg=$incsearch_fg      guibg=$incsearch_bg  ctermfg=0 ctermbg=9  cterm=bold gui=bold
+highlight ErrorMsg       guifg=$error_fg guibg=$error_bg ctermfg=15 ctermbg=1 cterm=bold gui=bold
+highlight WarningMsg     guifg=$warning_fg      guibg=$warning_bg ctermfg=0 ctermbg=11 cterm=bold gui=bold
+
+highlight Comment        guifg=${palette[8]}  ctermfg=8
+highlight Constant       guifg=${palette[6]}  ctermfg=6
+highlight String         guifg=${palette[2]}  ctermfg=2
+highlight Identifier     guifg=${palette[4]}  ctermfg=4
+highlight Statement      guifg=${palette[5]}  ctermfg=5
+highlight PreProc        guifg=${palette[3]}  ctermfg=3
+highlight Type           guifg=${palette[12]} ctermfg=12
+highlight Special        guifg=${palette[13]} ctermfg=13
+
+highlight DiagnosticError guifg=${palette[1]} guibg=$bg ctermfg=1 ctermbg=0
+highlight DiagnosticWarn  guifg=${palette[3]} guibg=$bg ctermfg=3 ctermbg=0
+highlight DiagnosticInfo  guifg=${palette[4]} guibg=$bg ctermfg=4 ctermbg=0
+highlight DiagnosticHint  guifg=${palette[6]} guibg=$bg ctermfg=6 ctermbg=0
+EOF
+
+  mkdir -p "$NVIM_COLOR_DIR"
+  cp -f "$VIM_COLOR_FILE" "$NVIM_COLOR_FILE"
+}
+
+resolve_mode_target() {
+  local mode="$1"
+  case "$mode" in
+    light|dark)
+      printf '%s\n' "$mode"
+      ;;
+    toggle)
+      if [ "$(read_current_mode)" = "light" ]; then
+        printf '%s\n' 'dark'
+      else
+        printf '%s\n' 'light'
+      fi
+      ;;
+    *)
+      echo "Unsupported mode: $mode (expected: light, dark, toggle)" >&2
+      return 1
+      ;;
+  esac
+}
+
+apply_mode() {
+  local requested_mode="$1"
+  local resolved_mode scheme_name scheme_file
+
+  resolved_mode="$(resolve_mode_target "$requested_mode")"
+  scheme_name="$(read_mode_theme_name "$resolved_mode")"
+  scheme_file="$(resolve_scheme_file "$scheme_name" || true)"
+  if [ -z "$scheme_file" ]; then
+    echo "Scheme not found for $resolved_mode mode: $scheme_name" >&2
+    echo "Run: weztheme --list" >&2
+    exit 1
+  fi
+
+  apply_scheme "$scheme_file"
+  generate_vim_colorscheme "$scheme_file" "$scheme_name"
+  generate_tmux_theme "$scheme_file" "$scheme_name"
+
+  if [ "$PERSIST" -eq 1 ]; then
+    persist_scheme "$scheme_file" "$scheme_name"
+    persist_mode_theme "$resolved_mode" "$scheme_file" "$scheme_name"
+    persist_mode_state "$resolved_mode"
+    sync_hermes_skin "$resolved_mode"
+    echo "Applied and persisted $resolved_mode mode: $scheme_name"
+  else
+    echo "Applied $resolved_mode mode (not persisted): $scheme_name"
+  fi
+
+  if [ -n "${TMUX:-}" ] && [ -f "$TMUX_THEME_FILE" ]; then
+    tmux source-file "$TMUX_THEME_FILE" >/dev/null 2>&1 || true
+  fi
+}
+
+SCHEME_NAME=""
+MODE_NAME=""
+SET_LIGHT_NAME=""
+SET_DARK_NAME=""
+PREVIEW_NAME=""
+DESCRIBE_NAME=""
+DO_LIST=0
+DO_REFRESH=0
+DO_CLEAR=0
+DO_SHOW_MODE_THEMES=0
+PERSIST=1
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --set)
+      SCHEME_NAME="${2:-}"
+      shift 2
+      ;;
+    --mode)
+      MODE_NAME="${2:-}"
+      shift 2
+      ;;
+    --set-light)
+      SET_LIGHT_NAME="${2:-}"
+      shift 2
+      ;;
+    --set-dark)
+      SET_DARK_NAME="${2:-}"
+      shift 2
+      ;;
+    --show-mode-themes)
+      DO_SHOW_MODE_THEMES=1
+      shift
+      ;;
+    --preview-theme)
+      PREVIEW_NAME="${2:-}"
+      shift 2
+      ;;
+    --describe-theme)
+      DESCRIBE_NAME="${2:-}"
+      shift 2
+      ;;
+    --list)
+      DO_LIST=1
+      shift
+      ;;
+    --refresh)
+      DO_REFRESH=1
+      shift
+      ;;
+    --clear)
+      DO_CLEAR=1
+      shift
+      ;;
+    --no-persist)
+      PERSIST=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$DO_CLEAR" -eq 1 ]; then
+  clear_persisted
+  exit 0
+fi
+
+if [ -n "$PREVIEW_NAME" ]; then
+  preview_scheme_name "$PREVIEW_NAME"
+  exit 0
+fi
+
+if [ -n "$DESCRIBE_NAME" ]; then
+  describe_scheme_name "$DESCRIBE_NAME"
+  exit 0
+fi
+
+if [ "$DO_REFRESH" -eq 1 ]; then
+  refresh_repo
+fi
+
+if [ "$DO_SHOW_MODE_THEMES" -eq 1 ]; then
+  ensure_repo
+  show_mode_themes
+  exit 0
+fi
+
+if [ -n "$SET_LIGHT_NAME" ]; then
+  ensure_repo
+  set_mode_theme_name light "$SET_LIGHT_NAME"
+  exit 0
+fi
+
+if [ -n "$SET_DARK_NAME" ]; then
+  ensure_repo
+  set_mode_theme_name dark "$SET_DARK_NAME"
+  exit 0
+fi
+
+if [ "$DO_LIST" -eq 1 ]; then
+  list_schemes
+  exit 0
+fi
+
+if [ -n "$MODE_NAME" ]; then
+  ensure_repo
+  if [ -z "${WEZTERM_PANE:-}" ] && [ "${TERM_PROGRAM:-}" != "WezTerm" ]; then
+    echo "Warning: not running inside WezTerm; colors may not apply here." >&2
+  fi
+  apply_mode "$MODE_NAME"
+  exit 0
+fi
+
+if [ -z "$SCHEME_NAME" ]; then
+  SCHEME_NAME="$(pick_scheme_interactive || true)"
+fi
+
+if [ -z "$SCHEME_NAME" ]; then
+  exit 0
+fi
+
+ensure_repo
+SCHEME_FILE="$(resolve_scheme_file "$SCHEME_NAME" || true)"
+if [ -z "$SCHEME_FILE" ]; then
+  echo "Scheme not found: $SCHEME_NAME" >&2
+  echo "Run: weztheme --list" >&2
+  exit 1
+fi
+
+if [ -z "${WEZTERM_PANE:-}" ] && [ "${TERM_PROGRAM:-}" != "WezTerm" ]; then
+  echo "Warning: not running inside WezTerm; colors may not apply here." >&2
+fi
+
+apply_scheme "$SCHEME_FILE"
+generate_vim_colorscheme "$SCHEME_FILE" "$SCHEME_NAME"
+generate_tmux_theme "$SCHEME_FILE" "$SCHEME_NAME"
+
+if [ "$PERSIST" -eq 1 ]; then
+  persist_scheme "$SCHEME_FILE" "$SCHEME_NAME"
+  echo "Applied and persisted: $SCHEME_NAME"
+else
+  echo "Applied (not persisted): $SCHEME_NAME"
+fi
+
+if [ -n "${TMUX:-}" ] && [ -f "$TMUX_THEME_FILE" ]; then
+  tmux source-file "$TMUX_THEME_FILE" >/dev/null 2>&1 || true
+fi

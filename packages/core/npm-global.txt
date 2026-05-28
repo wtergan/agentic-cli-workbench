@@ -1,0 +1,8 @@
+@openai/codex
+opencode-ai
+@anthropic-ai/claude-code
+@google/gemini-cli
+@github/copilot
+pnpm
+typescript
+typescript-language-server

@@ -1,0 +1,1055 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OS_NAME="$(uname -s 2>/dev/null || printf 'unknown')"
+XDG_GHOSTTY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
+MAC_APP_SUPPORT_CONFIG_DIR="$HOME/Library/Application Support/com.mitchellh.ghostty"
+
+if [ -n "${GHOSTTY_CONFIG_DIR:-}" ]; then
+  CONFIG_DIR="$GHOSTTY_CONFIG_DIR"
+elif [ "$OS_NAME" = "Darwin" ] && { [ -d "$MAC_APP_SUPPORT_CONFIG_DIR" ] || [ -f "$MAC_APP_SUPPORT_CONFIG_DIR/config" ]; }; then
+  CONFIG_DIR="$MAC_APP_SUPPORT_CONFIG_DIR"
+else
+  CONFIG_DIR="$XDG_GHOSTTY_CONFIG_DIR"
+fi
+
+CONFIG_FILE="$CONFIG_DIR/config"
+THEME_CONFIG_FILE="$CONFIG_DIR/theme-current.conf"
+STATE_FILE="$CONFIG_DIR/theme-current.txt"
+MODE_FILE="$CONFIG_DIR/theme-mode.txt"
+LIGHT_STATE_FILE="$CONFIG_DIR/theme-light.txt"
+DARK_STATE_FILE="$CONFIG_DIR/theme-dark.txt"
+VIM_COLOR_DIR="${HOME}/.vim/colors"
+VIM_COLOR_FILE="$VIM_COLOR_DIR/ghosttheme.vim"
+NVIM_COLOR_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvim/colors"
+NVIM_COLOR_FILE="$NVIM_COLOR_DIR/ghosttheme.vim"
+
+usage() {
+  cat <<'EOF'
+ghosttheme - Select, preview, and persist Ghostty themes.
+
+Usage:
+  ghosttheme                         # Interactive selection (fzf with preview)
+  ghosttheme --set <name>            # Apply and persist a theme by name
+  ghosttheme --mode <mode>           # Apply light|dark|toggle|auto mode
+  ghosttheme --set-light <name>      # Set the default light-mode theme
+  ghosttheme --set-dark <name>       # Set the default dark-mode theme
+  ghosttheme --show-mode-themes      # Show configured light/dark defaults
+  ghosttheme --describe-theme <name> # Print preview info and sample code
+  ghosttheme --no-reload --set <name> # Persist theme without asking Ghostty to reload
+  ghosttheme --no-runtime-colors --set <name> # Persist theme without OSC live colors
+  ghosttheme --list                  # List available themes
+  ghosttheme --show                  # Show current persisted theme or mode
+  ghosttheme --clear                 # Remove persisted theme state
+
+Notes:
+  - Interactive mode uses fzf and shows a live preview pane with a sample code block.
+  - --mode auto writes Ghostty's native light/dark theme syntax:
+      theme = light:<light-theme>,dark:<dark-theme>
+  - Vim/Neovim colors are regenerated when applying a single light/dark theme.
+  - If Hermes is installed, light/dark mode updates Hermes skin too
+    (defaults: daylight/slate, overridable via GHOSTTHEME_HERMES_SKIN_LIGHT/DARK).
+  - When stdout is a Ghostty TTY, emits OSC colors so the current terminal
+    surface changes immediately while the persisted config is reloaded.
+  - On macOS Ghostty 1.3+, asks running terminals to reload config via AppleScript.
+EOF
+}
+
+warn() {
+  printf 'ghosttheme: warning: %s\n' "$*" >&2
+}
+
+ensure_config_file() {
+  local dir config_file
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir"
+    config_file="$(config_file_for_dir "$dir")"
+    [ -f "$config_file" ] || : > "$config_file"
+  done < <(managed_config_dirs)
+}
+
+ensure_theme_include() {
+  local dir config_file
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    config_file="$(config_file_for_dir "$dir")"
+    if grep -Fqx 'config-file = "theme-current.conf"' "$config_file"; then
+      continue
+    fi
+    {
+      printf '\n'
+      printf '# Managed by ghosttheme; keep this include for dynamic theme persistence.\n'
+      printf 'config-file = "theme-current.conf"\n'
+    } >> "$config_file"
+  done < <(managed_config_dirs)
+}
+
+clear_legacy_theme_in_main_config() {
+  local dir config_file tmp
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    config_file="$(config_file_for_dir "$dir")"
+    [ -f "$config_file" ] || continue
+    tmp="$(mktemp)"
+    awk '
+      /^[[:space:]]*theme[[:space:]]*=/ && $0 !~ /^[[:space:]]*#/ { next }
+      { print }
+    ' "$config_file" > "$tmp"
+    mv "$tmp" "$config_file"
+  done < <(managed_config_dirs)
+}
+
+config_file_for_dir() {
+  local dir="$1"
+  if [ -f "$dir/config.ghostty" ] && [ ! -f "$dir/config" ]; then
+    printf '%s\n' "$dir/config.ghostty"
+  else
+    printf '%s\n' "$dir/config"
+  fi
+}
+
+theme_config_file_for_dir() {
+  printf '%s\n' "$1/theme-current.conf"
+}
+
+state_file_for_dir() {
+  printf '%s\n' "$1/theme-current.txt"
+}
+
+mode_file_for_dir() {
+  printf '%s\n' "$1/theme-mode.txt"
+}
+
+mode_state_path_for_dir() {
+  case "$2" in
+    light) printf '%s\n' "$1/theme-light.txt" ;;
+    dark) printf '%s\n' "$1/theme-dark.txt" ;;
+    *)
+      printf 'Unsupported mode: %s\n' "$2" >&2
+      return 1
+      ;;
+  esac
+}
+
+managed_config_dirs() {
+  {
+    printf '%s\n' "$CONFIG_DIR"
+    if [ "$OS_NAME" = "Darwin" ]; then
+      if [ "$XDG_GHOSTTY_CONFIG_DIR" != "$CONFIG_DIR" ] && {
+        [ -f "$XDG_GHOSTTY_CONFIG_DIR/config" ] ||
+          [ -f "$XDG_GHOSTTY_CONFIG_DIR/config.ghostty" ] ||
+          [ -f "$XDG_GHOSTTY_CONFIG_DIR/theme-current.conf" ]
+      }; then
+        printf '%s\n' "$XDG_GHOSTTY_CONFIG_DIR"
+      fi
+      if [ "$MAC_APP_SUPPORT_CONFIG_DIR" != "$CONFIG_DIR" ] && {
+        [ -f "$MAC_APP_SUPPORT_CONFIG_DIR/config" ] ||
+          [ -f "$MAC_APP_SUPPORT_CONFIG_DIR/config.ghostty" ] ||
+          [ -f "$MAC_APP_SUPPORT_CONFIG_DIR/theme-current.conf" ]
+      }; then
+        printf '%s\n' "$MAC_APP_SUPPORT_CONFIG_DIR"
+      fi
+    fi
+  } | awk 'NF && !seen[$0]++'
+}
+
+collect_theme_dirs() {
+  [ -n "${GHOSTTY_THEME_DIR:-}" ] && printf '%s\n' "$GHOSTTY_THEME_DIR"
+  [ -d "$CONFIG_DIR/themes" ] && printf '%s\n' "$CONFIG_DIR/themes"
+  if [ "$CONFIG_DIR" != "$XDG_GHOSTTY_CONFIG_DIR" ] && [ -d "$XDG_GHOSTTY_CONFIG_DIR/themes" ]; then
+    printf '%s\n' "$XDG_GHOSTTY_CONFIG_DIR/themes"
+  fi
+  if [ "$CONFIG_DIR" != "$MAC_APP_SUPPORT_CONFIG_DIR" ] && [ -d "$MAC_APP_SUPPORT_CONFIG_DIR/themes" ]; then
+    printf '%s\n' "$MAC_APP_SUPPORT_CONFIG_DIR/themes"
+  fi
+  if [ -n "${GHOSTTY_RESOURCES_DIR:-}" ] && [ -d "$GHOSTTY_RESOURCES_DIR/themes" ]; then
+    printf '%s\n' "$GHOSTTY_RESOURCES_DIR/themes"
+  fi
+  [ -d "/Applications/Ghostty.app/Contents/Resources/ghostty/themes" ] && printf '%s\n' "/Applications/Ghostty.app/Contents/Resources/ghostty/themes"
+  [ -d "/usr/share/ghostty/themes" ] && printf '%s\n' "/usr/share/ghostty/themes"
+  [ -d "/usr/local/share/ghostty/themes" ] && printf '%s\n' "/usr/local/share/ghostty/themes"
+}
+
+listing_theme_name() {
+  local line="$1"
+  if [[ "$line" =~ ^(.*)[[:space:]]\(([^()]*)\)$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  else
+    printf '%s\n' "$line"
+  fi
+}
+
+listing_theme_origin() {
+  local line="$1"
+  if [[ "$line" =~ ^(.*)[[:space:]]\(([^()]*)\)$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[2]}"
+  else
+    printf '%s\n' 'unknown'
+  fi
+}
+
+is_hex_color() {
+  case "${1:-}" in
+    \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+theme_value() {
+  local theme_file="$1"
+  local key="$2"
+  awk -F '=' -v target="$key" '
+    $0 !~ /^[[:space:]]*#/ {
+      lhs=$1
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", lhs)
+      if (lhs == target) {
+        value=substr($0, index($0, "=") + 1)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    }
+  ' "$theme_file"
+}
+
+theme_palette_color() {
+  local theme_file="$1"
+  local index="$2"
+  awk -F '=' -v idx="$index" '
+    $0 !~ /^[[:space:]]*#/ && $1 ~ /^[[:space:]]*palette[[:space:]]*$/ {
+      key=$2
+      value=$3
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (key == idx) {
+        print value
+        exit
+      }
+    }
+  ' "$theme_file"
+}
+
+color_or_fallback() {
+  local value="${1:-}"
+  local fallback="$2"
+  if is_hex_color "$value"; then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+hex_luminance() {
+  local hex="${1#\#}"
+  local r=$((16#${hex:0:2}))
+  local g=$((16#${hex:2:2}))
+  local b=$((16#${hex:4:2}))
+  echo $(((299 * r + 587 * g + 114 * b) / 1000))
+}
+
+hex_to_rgb_triplet() {
+  local hex="${1#\#}"
+  printf '%d;%d;%d' "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))"
+}
+
+theme_background_hex() {
+  local theme_file="$1"
+  color_or_fallback "$(theme_value "$theme_file" background)" '#1d1f21'
+}
+
+theme_category_from_file() {
+  local theme_file="$1"
+  local bg
+  bg="$(theme_background_hex "$theme_file")"
+  if [ "$(hex_luminance "$bg")" -ge 128 ]; then
+    printf '%s\n' 'light'
+  else
+    printf '%s\n' 'dark'
+  fi
+}
+
+resolve_theme_file_from_dirs() {
+  local theme_name="$1"
+  local dir candidate
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    candidate="$dir/$theme_name"
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(collect_theme_dirs)
+  return 1
+}
+
+list_theme_records_from_dirs() {
+  local color_filter="${1:-all}"
+  local dir file name origin category
+  while IFS= read -r dir; do
+    [ -d "$dir" ] || continue
+    origin='builtin'
+    case "$dir" in
+      "$CONFIG_DIR/themes"|"$XDG_GHOSTTY_CONFIG_DIR/themes"|"$MAC_APP_SUPPORT_CONFIG_DIR/themes") origin='user' ;;
+    esac
+    while IFS= read -r -d '' file; do
+      name="$(basename "$file")"
+      category="$(theme_category_from_file "$file")"
+      if [ "$color_filter" = 'all' ] || [ "$category" = "$color_filter" ]; then
+        printf '%s\t%s\t%s\t%s\n' "$category" "$name" "$file" "$origin"
+      fi
+    done < <(find "$dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  done < <(collect_theme_dirs)
+}
+
+list_theme_records() {
+  local color_filter="${1:-all}"
+  local line name origin file category
+
+  if command -v ghostty >/dev/null 2>&1; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      name="$(listing_theme_name "$line")"
+      origin="$(listing_theme_origin "$line")"
+      file="$(resolve_theme_file_from_dirs "$name" || true)"
+      [ -n "$file" ] || continue
+      category="$(theme_category_from_file "$file")"
+      if [ "$color_filter" = 'all' ] || [ "$category" = "$color_filter" ]; then
+        printf '%s\t%s\t%s\t%s\n' "$category" "$name" "$file" "$origin"
+      fi
+    done < <(ghostty +list-themes --plain)
+    return 0
+  fi
+
+  list_theme_records_from_dirs "$color_filter"
+}
+
+list_themes() {
+  list_theme_records all | awk -F '\t' '{print $2}' | sort -fu
+}
+
+resolve_theme_record() {
+  local query="$1"
+  [ -n "$query" ] || return 1
+  list_theme_records all | awk -F '\t' -v query="$query" '
+    tolower($2) == tolower(query) { print; exit }
+  '
+}
+
+resolve_theme_file() {
+  local query="$1"
+  local record
+  record="$(resolve_theme_record "$query" || true)"
+  [ -n "$record" ] || return 1
+  printf '%s\n' "$record" | awk -F '\t' '{print $3}'
+}
+
+resolve_theme_name() {
+  local query="$1"
+  local record
+  record="$(resolve_theme_record "$query" || true)"
+  [ -n "$record" ] || return 1
+  printf '%s\n' "$record" | awk -F '\t' '{print $2}'
+}
+
+default_mode_theme() {
+  local mode="$1"
+  local detected fallback
+  case "$mode" in
+    light) fallback='Builtin Solarized Light' ;;
+    dark) fallback='Builtin Dark' ;;
+    *)
+      printf 'Unsupported mode: %s\n' "$mode" >&2
+      return 1
+      ;;
+  esac
+
+  detected="$(list_theme_records "$mode" | awk -F '\t' 'NR == 1 { print $2; exit }' || true)"
+  if [ -n "$detected" ]; then
+    printf '%s\n' "$detected"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+mode_state_path() {
+  case "$1" in
+    light) printf '%s\n' "$LIGHT_STATE_FILE" ;;
+    dark) printf '%s\n' "$DARK_STATE_FILE" ;;
+    *)
+      printf 'Unsupported mode: %s\n' "$1" >&2
+      return 1
+      ;;
+  esac
+}
+
+read_mode_theme_name() {
+  local mode="$1"
+  local path
+  path="$(mode_state_path "$mode")"
+  if [ -f "$path" ]; then
+    head -n 1 "$path"
+    return 0
+  fi
+  default_mode_theme "$mode"
+}
+
+persist_mode_theme_name() {
+  local mode="$1"
+  local theme_name="$2"
+  local resolved_name dir path
+  resolved_name="$(resolve_theme_name "$theme_name" || true)"
+  if [ -z "$resolved_name" ]; then
+    printf 'Theme not found for %s mode: %s\n' "$mode" "$theme_name" >&2
+    printf 'Run: ghosttheme --list\n' >&2
+    exit 1
+  fi
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir"
+    path="$(mode_state_path_for_dir "$dir" "$mode")"
+    printf '%s\n' "$resolved_name" > "$path"
+  done < <(managed_config_dirs)
+}
+
+read_current_mode() {
+  if [ -f "$MODE_FILE" ]; then
+    head -n 1 "$MODE_FILE"
+    return 0
+  fi
+  printf '%s\n' 'dark'
+}
+
+persist_mode_state() {
+  local mode="$1"
+  local dir
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir"
+    printf '%s\n' "$mode" > "$(mode_file_for_dir "$dir")"
+  done < <(managed_config_dirs)
+}
+
+current_theme_line_from_config() {
+  awk -F '=' '
+    /^[[:space:]]*theme[[:space:]]*=/ && $0 !~ /^[[:space:]]*#/ {
+      value=substr($0, index($0, "=") + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "$THEME_CONFIG_FILE" 2>/dev/null || true
+}
+
+read_current_theme_name() {
+  if [ -f "$STATE_FILE" ]; then
+    head -n 1 "$STATE_FILE"
+    return 0
+  fi
+  current_theme_line_from_config
+}
+
+persist_current_theme_name() {
+  local theme_name="$1"
+  local dir
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir"
+    printf '%s\n' "$theme_name" > "$(state_file_for_dir "$dir")"
+  done < <(managed_config_dirs)
+}
+
+set_theme_state_single() {
+  local theme_name="$1"
+  local dir theme_config_file
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir"
+    theme_config_file="$(theme_config_file_for_dir "$dir")"
+    printf '# Managed by ghosttheme. Do not edit manually.\n' > "$theme_config_file"
+    printf 'theme = %s\n' "$theme_name" >> "$theme_config_file"
+  done < <(managed_config_dirs)
+}
+
+set_theme_state_auto() {
+  local light_theme="$1"
+  local dark_theme="$2"
+  local dir theme_config_file
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir"
+    theme_config_file="$(theme_config_file_for_dir "$dir")"
+    printf '# Managed by ghosttheme. Do not edit manually.\n' > "$theme_config_file"
+    printf 'theme = light:%s,dark:%s\n' "$light_theme" "$dark_theme" >> "$theme_config_file"
+  done < <(managed_config_dirs)
+}
+
+generate_vim_colorscheme() {
+  local theme_file="$1"
+  local scheme_name="$2"
+  local bg fg cursor bg_mode
+  local p0 p1 p2 p3 p4 p5 p6 p7 p8 p9 p10 p11 p12 p13 p14 p15
+
+  p0="$(color_or_fallback "$(theme_palette_color "$theme_file" 0)" '#1d1f21')"
+  p1="$(color_or_fallback "$(theme_palette_color "$theme_file" 1)" '#cc6666')"
+  p2="$(color_or_fallback "$(theme_palette_color "$theme_file" 2)" '#b5bd68')"
+  p3="$(color_or_fallback "$(theme_palette_color "$theme_file" 3)" '#f0c674')"
+  p4="$(color_or_fallback "$(theme_palette_color "$theme_file" 4)" '#81a2be')"
+  p5="$(color_or_fallback "$(theme_palette_color "$theme_file" 5)" '#b294bb')"
+  p6="$(color_or_fallback "$(theme_palette_color "$theme_file" 6)" '#8abeb7')"
+  p7="$(color_or_fallback "$(theme_palette_color "$theme_file" 7)" '#c5c8c6')"
+  p8="$(color_or_fallback "$(theme_palette_color "$theme_file" 8)" "$p7")"
+  p9="$(color_or_fallback "$(theme_palette_color "$theme_file" 9)" "$p1")"
+  p10="$(color_or_fallback "$(theme_palette_color "$theme_file" 10)" "$p2")"
+  p11="$(color_or_fallback "$(theme_palette_color "$theme_file" 11)" "$p3")"
+  p12="$(color_or_fallback "$(theme_palette_color "$theme_file" 12)" "$p4")"
+  p13="$(color_or_fallback "$(theme_palette_color "$theme_file" 13)" "$p5")"
+  p14="$(color_or_fallback "$(theme_palette_color "$theme_file" 14)" "$p6")"
+  p15="$(color_or_fallback "$(theme_palette_color "$theme_file" 15)" '#ffffff')"
+
+  fg="$(color_or_fallback "$(theme_value "$theme_file" foreground)" "$p7")"
+  bg="$(color_or_fallback "$(theme_value "$theme_file" background)" "$p0")"
+  cursor="$(color_or_fallback "$(theme_value "$theme_file" cursor-color)" "$p15")"
+
+  if [ "$(hex_luminance "$bg")" -ge 128 ]; then
+    bg_mode='light'
+  else
+    bg_mode='dark'
+  fi
+
+  mkdir -p "$VIM_COLOR_DIR"
+  cat > "$VIM_COLOR_FILE" <<EOF
+" Auto-generated by ghosttheme from: $scheme_name
+hi clear
+if exists("syntax_on")
+  syntax reset
+endif
+let g:colors_name = "ghosttheme"
+set background=$bg_mode
+
+highlight Normal          guifg=$fg  guibg=$bg   ctermfg=15 ctermbg=0
+highlight NormalNC        guifg=$p7  guibg=$p0   ctermfg=7  ctermbg=0
+highlight LineNr          guifg=$p8  guibg=$bg   ctermfg=8  ctermbg=0
+highlight CursorLine      guibg=$p8              ctermbg=8
+highlight CursorLineNr    guifg=$p11 guibg=$p8   ctermfg=11 ctermbg=8 cterm=bold gui=bold
+highlight Cursor          guifg=$bg  guibg=$cursor ctermfg=0 ctermbg=15
+highlight SignColumn      guifg=$fg  guibg=$bg   ctermfg=15 ctermbg=0
+highlight VertSplit       guifg=$p8  guibg=$p0   ctermfg=8  ctermbg=0
+highlight StatusLine      guifg=$fg  guibg=$p8   ctermfg=15 ctermbg=8 cterm=bold gui=bold
+highlight StatusLineNC    guifg=$p7  guibg=$p0   ctermfg=7  ctermbg=0
+highlight Pmenu           guifg=$fg  guibg=$p8   ctermfg=15 ctermbg=8
+highlight PmenuSel        guifg=$bg  guibg=$p4   ctermfg=0  ctermbg=4 cterm=bold gui=bold
+highlight Visual          guibg=$p8              ctermbg=8
+highlight Search          guifg=$bg  guibg=$p11  ctermfg=0  ctermbg=11 cterm=bold gui=bold
+highlight IncSearch       guifg=$bg  guibg=$p9   ctermfg=0  ctermbg=9 cterm=bold gui=bold
+highlight ErrorMsg        guifg=$p15 guibg=$p1   ctermfg=15 ctermbg=1 cterm=bold gui=bold
+highlight WarningMsg      guifg=$bg  guibg=$p11  ctermfg=0  ctermbg=11 cterm=bold gui=bold
+
+highlight Comment         guifg=$p8  ctermfg=8
+highlight Constant        guifg=$p6  ctermfg=6
+highlight String          guifg=$p2  ctermfg=2
+highlight Identifier      guifg=$p4  ctermfg=4
+highlight Statement       guifg=$p5  ctermfg=5
+highlight PreProc         guifg=$p3  ctermfg=3
+highlight Type            guifg=$p12 ctermfg=12
+highlight Special         guifg=$p13 ctermfg=13
+
+highlight DiagnosticError guifg=$p1  guibg=$bg ctermfg=1 ctermbg=0
+highlight DiagnosticWarn  guifg=$p3  guibg=$bg ctermfg=3 ctermbg=0
+highlight DiagnosticInfo  guifg=$p4  guibg=$bg ctermfg=4 ctermbg=0
+highlight DiagnosticHint  guifg=$p6  guibg=$bg ctermfg=6 ctermbg=0
+EOF
+
+  mkdir -p "$NVIM_COLOR_DIR"
+  cp -f "$VIM_COLOR_FILE" "$NVIM_COLOR_FILE"
+}
+
+sync_vim_theme() {
+  local theme_name="$1"
+  local theme_file
+  theme_file="$(resolve_theme_file "$theme_name" || true)"
+  if [ -z "$theme_file" ]; then
+    warn "theme source file not found for Vim sync: $theme_name"
+    return 0
+  fi
+  generate_vim_colorscheme "$theme_file" "$theme_name"
+}
+
+should_emit_runtime_colors() {
+  [ "${GHOSTTHEME_NO_RUNTIME_COLORS:-0}" = "1" ] && return 1
+  [ "${GHOSTTHEME_FORCE_RUNTIME_COLORS:-0}" = "1" ] && return 0
+  [ -t 1 ] || return 1
+
+  case "${TERM_PROGRAM:-}:${TERM:-}:${GHOSTTY_RESOURCES_DIR:-}" in
+    *Ghostty*|*ghostty*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+emit_osc_color() {
+  local code="$1"
+  local color="$2"
+  printf '\033]%s;%s\033\\' "$code" "$color"
+}
+
+emit_runtime_theme_colors() {
+  local theme_file="$1"
+  local bg fg cursor color index
+
+  should_emit_runtime_colors || return 0
+  [ -f "$theme_file" ] || return 0
+
+  bg="$(color_or_fallback "$(theme_value "$theme_file" background)" '#1d1f21')"
+  fg="$(color_or_fallback "$(theme_value "$theme_file" foreground)" '#c5c8c6')"
+  cursor="$(color_or_fallback "$(theme_value "$theme_file" cursor-color)" "$fg")"
+
+  # OSC 10-12 are Ghostty-supported dynamic colors; OSC 4 updates the palette.
+  emit_osc_color 10 "$fg"
+  emit_osc_color 11 "$bg"
+  emit_osc_color 12 "$cursor"
+
+  for index in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    color="$(theme_palette_color "$theme_file" "$index")"
+    if is_hex_color "$color"; then
+      emit_osc_color 4 "$index;$color"
+    fi
+  done
+}
+
+validate_config() {
+  if command -v ghostty >/dev/null 2>&1; then
+    if ! ghostty +validate-config >/dev/null 2>&1; then
+      warn 'ghostty config validation reported an issue.'
+    fi
+  fi
+}
+
+reload_ghostty_config() {
+  [ "${GHOSTTHEME_NO_RELOAD:-0}" = "1" ] && return 0
+  [ "$OS_NAME" = "Darwin" ] || return 0
+  command -v osascript >/dev/null 2>&1 || return 0
+  pgrep -x Ghostty >/dev/null 2>&1 || return 0
+
+  if ! osascript >/dev/null 2>&1 <<'APPLESCRIPT'
+tell application "Ghostty"
+  repeat with term in terminals
+    perform action "reload_config" on term
+  end repeat
+end tell
+APPLESCRIPT
+  then
+    warn 'could not auto-reload Ghostty via AppleScript; use Cmd+Shift+, or allow Automation for your shell.'
+  fi
+}
+
+sync_hermes_skin() {
+  local mode="$1"
+  local skin=""
+
+  case "$mode" in
+    light) skin="${GHOSTTHEME_HERMES_SKIN_LIGHT:-daylight}" ;;
+    dark) skin="${GHOSTTHEME_HERMES_SKIN_DARK:-slate}" ;;
+    *) return 0 ;;
+  esac
+
+  if command -v hermes >/dev/null 2>&1; then
+    hermes config set display.skin "$skin" >/dev/null 2>&1 || true
+  fi
+}
+
+show_current_theme() {
+  local current
+  current="$(read_current_theme_name || true)"
+  [ -n "$current" ] && printf '%s\n' "$current"
+}
+
+show_mode_themes() {
+  printf 'light: %s\n' "$(read_mode_theme_name light)"
+  printf 'dark:  %s\n' "$(read_mode_theme_name dark)"
+}
+
+theme_record_name() {
+  printf '%s\n' "$1" | awk -F '\t' '{print $2}'
+}
+
+theme_record_file() {
+  printf '%s\n' "$1" | awk -F '\t' '{print $3}'
+}
+
+apply_theme() {
+  local theme_name="$1"
+  local record
+  local resolved_name
+  local resolved_file
+  local resolved_mode
+
+  record="$(resolve_theme_record "$theme_name" || true)"
+  if [ -z "$record" ]; then
+    printf 'Theme not found: %s\n' "$theme_name" >&2
+    printf 'Run: ghosttheme --list\n' >&2
+    exit 1
+  fi
+  resolved_name="$(theme_record_name "$record")"
+  resolved_file="$(theme_record_file "$record")"
+  resolved_mode="$(theme_category_from_file "$resolved_file")"
+
+  ensure_config_file
+  ensure_theme_include
+  clear_legacy_theme_in_main_config
+  set_theme_state_single "$resolved_name"
+  persist_current_theme_name "$resolved_name"
+  persist_mode_state "$resolved_mode"
+  sync_hermes_skin "$resolved_mode"
+  sync_vim_theme "$resolved_name"
+  validate_config
+  emit_runtime_theme_colors "$resolved_file"
+  reload_ghostty_config
+  printf 'Applied and persisted Ghostty theme: %s\n' "$resolved_name"
+  printf 'Requested Ghostty config reload.\n'
+}
+
+apply_mode() {
+  local requested_mode="$1"
+  local next_mode light_theme dark_theme target_theme
+
+  case "$requested_mode" in
+    toggle)
+      case "$(read_current_mode)" in
+        dark) next_mode='light' ;;
+        *) next_mode='dark' ;;
+      esac
+      apply_mode "$next_mode"
+      return 0
+      ;;
+    light|dark)
+      target_theme="$(read_mode_theme_name "$requested_mode")"
+      apply_theme "$target_theme"
+      persist_mode_state "$requested_mode"
+      printf 'Applied %s mode theme: %s\n' "$requested_mode" "$target_theme"
+      return 0
+      ;;
+    auto)
+      light_theme="$(read_mode_theme_name light)"
+      dark_theme="$(read_mode_theme_name dark)"
+      ensure_config_file
+      ensure_theme_include
+      clear_legacy_theme_in_main_config
+      set_theme_state_auto "$light_theme" "$dark_theme"
+      persist_current_theme_name "light:$light_theme,dark:$dark_theme"
+      persist_mode_state 'auto'
+      validate_config
+      reload_ghostty_config
+      printf 'Applied Ghostty auto mode: light:%s dark:%s\n' "$light_theme" "$dark_theme"
+      printf 'Requested Ghostty config reload.\n'
+      return 0
+      ;;
+    *)
+      printf 'Unsupported mode: %s\n' "$requested_mode" >&2
+      printf 'Expected: light | dark | toggle | auto\n' >&2
+      exit 1
+      ;;
+  esac
+}
+
+clear_theme() {
+  local dir
+  ensure_config_file
+  ensure_theme_include
+  clear_legacy_theme_in_main_config
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    rm -f \
+      "$(theme_config_file_for_dir "$dir")" \
+      "$(state_file_for_dir "$dir")" \
+      "$(mode_file_for_dir "$dir")" \
+      "$(mode_state_path_for_dir "$dir" light)" \
+      "$(mode_state_path_for_dir "$dir" dark)"
+  done < <(managed_config_dirs)
+  rm -f "$VIM_COLOR_FILE" "$NVIM_COLOR_FILE"
+  validate_config
+  reload_ghostty_config
+  printf 'Cleared explicit Ghostty theme state. Requested Ghostty config reload.\n'
+}
+
+describe_theme_record() {
+  local category="$1"
+  local name="$2"
+  local theme_file="$3"
+  local origin="$4"
+  local bg fg cursor sel_bg sel_fg reset
+  local c1 c2 c3 c4 c5 c6 c7 c8 c11 c14
+  local p1 p2 p3 p4 p5 p6 p7 p8 p11 p14
+
+  if [ -z "$theme_file" ] || [ ! -f "$theme_file" ]; then
+    printf 'Theme source not found: %s\n' "$name"
+    return 0
+  fi
+  [ -n "$category" ] || category="$(theme_category_from_file "$theme_file")"
+  [ -n "$origin" ] || origin='unknown'
+
+  bg="$(color_or_fallback "$(theme_value "$theme_file" background)" '#1d1f21')"
+  fg="$(color_or_fallback "$(theme_value "$theme_file" foreground)" '#c5c8c6')"
+  cursor="$(color_or_fallback "$(theme_value "$theme_file" cursor-color)" "$fg")"
+  sel_bg="$(color_or_fallback "$(theme_value "$theme_file" selection-background)" "$bg")"
+  sel_fg="$(color_or_fallback "$(theme_value "$theme_file" selection-foreground)" "$fg")"
+
+  c1="$(color_or_fallback "$(theme_palette_color "$theme_file" 1)" '#cc6666')"
+  c2="$(color_or_fallback "$(theme_palette_color "$theme_file" 2)" '#b5bd68')"
+  c3="$(color_or_fallback "$(theme_palette_color "$theme_file" 3)" '#f0c674')"
+  c4="$(color_or_fallback "$(theme_palette_color "$theme_file" 4)" '#81a2be')"
+  c5="$(color_or_fallback "$(theme_palette_color "$theme_file" 5)" '#b294bb')"
+  c6="$(color_or_fallback "$(theme_palette_color "$theme_file" 6)" '#8abeb7')"
+  c7="$(color_or_fallback "$(theme_palette_color "$theme_file" 7)" '#c5c8c6')"
+  c8="$(color_or_fallback "$(theme_palette_color "$theme_file" 8)" "$c7")"
+  c11="$(color_or_fallback "$(theme_palette_color "$theme_file" 11)" "$c3")"
+  c14="$(color_or_fallback "$(theme_palette_color "$theme_file" 14)" "$c6")"
+
+  p1="$(hex_to_rgb_triplet "$c1")"
+  p2="$(hex_to_rgb_triplet "$c2")"
+  p3="$(hex_to_rgb_triplet "$c3")"
+  p4="$(hex_to_rgb_triplet "$c4")"
+  p5="$(hex_to_rgb_triplet "$c5")"
+  p6="$(hex_to_rgb_triplet "$c6")"
+  p7="$(hex_to_rgb_triplet "$c7")"
+  p8="$(hex_to_rgb_triplet "$c8")"
+  p11="$(hex_to_rgb_triplet "$c11")"
+  p14="$(hex_to_rgb_triplet "$c14")"
+  reset=$'\033[0m'
+
+  printf 'Theme: %s\n' "$name"
+  printf 'Origin: %s\n' "$origin"
+  printf 'Category: %s\n' "$category"
+  printf 'Background: %s\n' "$bg"
+  printf 'Foreground: %s\n' "$fg"
+  printf 'Cursor: %s\n' "$cursor"
+  printf 'Selection: %s on %s\n' "$sel_fg" "$sel_bg"
+  printf '\nCode sample:\n\n'
+  printf '  %bdef%b ' "\033[38;2;${p5}m" "$reset"
+  printf '%bspawn_agent%b' "\033[38;2;${p4}m" "$reset"
+  printf '(%btheme%b: %bstr%b, %bmode%b: %bstr%b) -> %bstr%b:\n' \
+    "\033[38;2;${p7}m" "$reset" \
+    "\033[38;2;${p6}m" "$reset" \
+    "\033[38;2;${p7}m" "$reset" \
+    "\033[38;2;${p6}m" "$reset" \
+    "\033[38;2;${p6}m" "$reset"
+  printf '      %bif%b mode == %b"auto"%b:\n' \
+    "\033[38;2;${p5}m" "$reset" \
+    "\033[38;2;${p2}m" "$reset"
+  printf '          return %bf%b%b"theme = light:{light},dark:{dark}"%b\n' \
+    "\033[38;2;${p3}m" "$reset" \
+    "\033[38;2;${p2}m" "$reset"
+  printf '      return %bf%b%b"theme = {theme}"%b  %b# reload Ghostty config%b\n' \
+    "\033[38;2;${p3}m" "$reset" \
+    "\033[38;2;${p2}m" "$reset" \
+    "\033[38;2;${p8}m" "$reset"
+  printf '\nStatus colors: %bOK%b  %bWARN%b  %bERR%b  %bINFO%b\n' \
+    "\033[38;2;${p2}m" "$reset" \
+    "\033[38;2;${p11}m" "$reset" \
+    "\033[38;2;${p1}m" "$reset" \
+    "\033[38;2;${p14}m" "$reset"
+  printf '\nGhostty config snippet:\n'
+  printf '  theme = %s\n' "$name"
+  printf '  # auto mode example: theme = light:%s,dark:%s\n' "$(read_mode_theme_name light)" "$(read_mode_theme_name dark)"
+  printf '\nVim/Neovim:\n  colorscheme ghosttheme\n  generated file updates when you apply a single theme\n'
+}
+
+describe_theme_name() {
+  local query="$1"
+  local record category name theme_file origin
+
+  record="$(resolve_theme_record "$query" || true)"
+  if [ -z "$record" ]; then
+    printf 'Theme not found: %s\n' "$query"
+    return 0
+  fi
+
+  IFS=$'\t' read -r category name theme_file origin <<EOF
+$record
+EOF
+  describe_theme_record "$category" "$name" "$theme_file" "$origin"
+}
+
+pick_theme_interactive() {
+  local self current_mode category_query prompt_header preview_cmd selection exit_status
+
+  if ! command -v fzf >/dev/null 2>&1; then
+    printf 'ghosttheme: fzf is required for interactive mode. Use --set <name> instead.\n' >&2
+    exit 1
+  fi
+
+  self="$0"
+  if command -v realpath >/dev/null 2>&1; then
+    self="$(realpath "$0" 2>/dev/null || printf '%s' "$0")"
+  else
+    self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  fi
+
+  current_mode="$(read_current_mode)"
+  category_query="$current_mode "
+  case "$current_mode" in
+    light|dark) ;;
+    *) category_query='dark ' ;;
+  esac
+
+  prompt_header=$'alt-l: light  alt-d: dark  alt-a: all\nenter: apply selection  esc: cancel'
+  preview_cmd='bash -c '\''exec "$1" --describe-theme-record "$2" "$3" "$4" "$5"'\'' bash '"$self"' {1} {2} {3} {4}'
+  selection="$(list_theme_records all | fzf \
+    --height=80% \
+    --layout=reverse \
+    --border \
+    --prompt='ghosttheme> ' \
+    --header="$prompt_header" \
+    --delimiter=$'\t' \
+    --with-nth=1,2,4 \
+    --preview="$preview_cmd" \
+    --preview-window='right:50%,border-left,wrap' \
+    --bind "start:change-query($category_query)" \
+    --bind 'alt-l:change-query(light )' \
+    --bind 'alt-d:change-query(dark )' \
+    --bind 'alt-a:change-query()' \
+    --bind 'ctrl-l:change-query(light )' \
+    --bind 'ctrl-d:change-query(dark )' \
+    --bind 'ctrl-a:change-query()')"
+  exit_status=$?
+
+  if [ $exit_status -ne 0 ] || [ -z "$selection" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$selection" | awk -F '\t' '{print $2}'
+}
+
+THEME_NAME=""
+SET_LIGHT_NAME=""
+SET_DARK_NAME=""
+DESCRIBE_NAME=""
+DESCRIBE_RECORD_CATEGORY=""
+DESCRIBE_RECORD_NAME=""
+DESCRIBE_RECORD_FILE=""
+DESCRIBE_RECORD_ORIGIN=""
+MODE_NAME=""
+DO_LIST=0
+DO_SHOW=0
+DO_CLEAR=0
+DO_SHOW_MODE_THEMES=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --set)
+      THEME_NAME="${2:-}"
+      shift 2
+      ;;
+    --set-light)
+      SET_LIGHT_NAME="${2:-}"
+      shift 2
+      ;;
+    --set-dark)
+      SET_DARK_NAME="${2:-}"
+      shift 2
+      ;;
+    --mode)
+      MODE_NAME="${2:-}"
+      shift 2
+      ;;
+    --describe-theme|--preview-theme)
+      DESCRIBE_NAME="${2:-}"
+      shift 2
+      ;;
+    --describe-theme-record)
+      DESCRIBE_RECORD_CATEGORY="${2:-}"
+      DESCRIBE_RECORD_NAME="${3:-}"
+      DESCRIBE_RECORD_FILE="${4:-}"
+      DESCRIBE_RECORD_ORIGIN="${5:-}"
+      shift 5
+      ;;
+    --no-reload)
+      GHOSTTHEME_NO_RELOAD=1
+      export GHOSTTHEME_NO_RELOAD
+      shift
+      ;;
+    --no-runtime-colors|--no-osc)
+      GHOSTTHEME_NO_RUNTIME_COLORS=1
+      export GHOSTTHEME_NO_RUNTIME_COLORS
+      shift
+      ;;
+    --show-mode-themes)
+      DO_SHOW_MODE_THEMES=1
+      shift
+      ;;
+    --list)
+      DO_LIST=1
+      shift
+      ;;
+    --show)
+      DO_SHOW=1
+      shift
+      ;;
+    --clear)
+      DO_CLEAR=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$DO_LIST" -eq 1 ]; then
+  list_themes
+  exit 0
+fi
+
+if [ -n "$DESCRIBE_NAME" ]; then
+  describe_theme_name "$DESCRIBE_NAME"
+  exit 0
+fi
+
+if [ -n "$DESCRIBE_RECORD_FILE" ]; then
+  describe_theme_record "$DESCRIBE_RECORD_CATEGORY" "$DESCRIBE_RECORD_NAME" "$DESCRIBE_RECORD_FILE" "$DESCRIBE_RECORD_ORIGIN"
+  exit 0
+fi
+
+if [ -n "$SET_LIGHT_NAME" ]; then
+  persist_mode_theme_name light "$SET_LIGHT_NAME"
+  printf 'Set light mode default theme: %s\n' "$(read_mode_theme_name light)"
+  exit 0
+fi
+
+if [ -n "$SET_DARK_NAME" ]; then
+  persist_mode_theme_name dark "$SET_DARK_NAME"
+  printf 'Set dark mode default theme: %s\n' "$(read_mode_theme_name dark)"
+  exit 0
+fi
+
+if [ "$DO_SHOW_MODE_THEMES" -eq 1 ]; then
+  show_mode_themes
+  exit 0
+fi
+
+if [ "$DO_SHOW" -eq 1 ]; then
+  show_current_theme || true
+  exit 0
+fi
+
+if [ "$DO_CLEAR" -eq 1 ]; then
+  clear_theme
+  exit 0
+fi
+
+if [ -n "$MODE_NAME" ]; then
+  apply_mode "$MODE_NAME"
+  exit 0
+fi
+
+if [ -z "$THEME_NAME" ]; then
+  THEME_NAME="$(pick_theme_interactive || true)"
+fi
+
+[ -n "$THEME_NAME" ] || exit 0
+apply_theme "$THEME_NAME"

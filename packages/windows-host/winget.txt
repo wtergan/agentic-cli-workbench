@@ -1,0 +1,5 @@
+Microsoft.WindowsTerminal
+wez.wezterm
+Git.Git
+Microsoft.VisualStudioCode
+Google.Chrome
