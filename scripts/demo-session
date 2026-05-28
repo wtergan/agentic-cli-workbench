@@ -7,28 +7,57 @@ DEMO_ROOT="${AGENTIC_WORKBENCH_DEMO_ROOT:-$ROOT/demo/workspace}"
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/demo-session prepare
+  scripts/demo-session prepare [codex|hermes]
   scripts/demo-session show [hermes|codex|nav]
-  scripts/demo-session path
+  scripts/demo-session reset [hermes|codex|all]
+  scripts/demo-session kill [hermes|codex|nav|all]
+  scripts/demo-session path [codex|hermes|workbench]
 
 Creates neutral demo data and launches public-safe tmux layouts.
+
+By default, the agent pane is a mock public-safe agent screen. Set
+AGENTIC_WORKBENCH_REAL_AGENT=1 only when you have reviewed that the real agent
+TUI will not expose account, session, path, or billing details.
 USAGE
 }
 
 prepare_demo_repo() {
-  local repo="$DEMO_ROOT/example-app"
-  mkdir -p "$repo/src" "$repo/docs"
-  printf '# Example App\n\nNeutral demo project for screenshots.\n' > "$repo/README.md"
+  local mode="${1:-workbench}"
+  local repo="$DEMO_ROOT/${mode}-demo"
+  mkdir -p "$repo/src" "$repo/docs" "$repo/tests" "$repo/config"
+  printf '# %s Demo\n\nNeutral demo project for public workbench screenshots.\n' "${mode^}" > "$repo/README.md"
   printf 'export function greet(name) {\n  return `hello ${name}`;\n}\n' > "$repo/src/greet.js"
+  printf 'export const workflow = {\n  agent: "%s",\n  review: true,\n};\n' "$mode" > "$repo/config/workflow.js"
   printf 'Workbench notes for public demo captures.\n' > "$repo/docs/workflow.md"
+  printf 'import { greet } from "../src/greet.js";\n\nconsole.log(greet("demo"));\n' > "$repo/tests/greet.test.js"
 
   if [ ! -d "$repo/.git" ]; then
     git -C "$repo" init -b main >/dev/null
     git -C "$repo" config user.name "Demo Author"
     git -C "$repo" config user.email "demo@example.invalid"
     git -C "$repo" add .
-    git -C "$repo" commit -m "FEAT: seed demo project" >/dev/null
+    git -C "$repo" commit -m "FEAT: seed demo project" \
+      -m "- Adds neutral source, docs, config, and test fixtures" >/dev/null
+
+    printf '## Capture Checklist\n\n- Run doctor\n- Open tmux layout\n- Review screenshot\n' > "$repo/docs/capture-checklist.md"
+    git -C "$repo" add docs/capture-checklist.md
+    git -C "$repo" commit -m "DOCS: add screenshot capture checklist" \
+      -m "- Documents the public-safe screenshot review steps" >/dev/null
+
+    printf 'export function summarize(items) {\n  return items.map((item) => item.title).join(", ");\n}\n' > "$repo/src/summarize.js"
+    git -C "$repo" add src/summarize.js
+    git -C "$repo" commit -m "FEAT: add summary helper" \
+      -m "- Gives lazygit a small feature commit for demo history" >/dev/null
   fi
+
+  git -C "$repo" config user.name "Demo Author"
+  git -C "$repo" config user.email "demo@example.invalid"
+
+  # Keep the working tree intentionally interesting for lazygit screenshots.
+  printf 'export const screenshotMode = "%s";\n' "$mode" > "$repo/config/screenshot.js"
+  git -C "$repo" add config/screenshot.js
+  printf '\n## Current Screenshot Pass\n\n- Review panes\n- Crop terminal only\n' >> "$repo/docs/workflow.md"
+  printf 'TODO: verify screenshot crop\n' > "$repo/notes.todo"
 
   echo "$repo"
 }
@@ -36,22 +65,39 @@ prepare_demo_repo() {
 mock_agent_command() {
   local mode="$1"
   printf 'printf "\\033[2J\\033[H"; '
-  printf 'echo "%s AGENT DEMO"; ' "${mode^^}"
-  printf 'echo; echo "Available tools: edit, search, test, review"; '
-  printf 'echo "Session: public-safe demo"; '
-  printf 'echo; echo "Ask me to inspect the repo or plan the next change."; '
+  printf 'echo "%s SCREENSHOT DEMO"; ' "${mode^^}"
+  printf 'echo "======================"; '
+  printf 'echo; echo "Public-safe mock agent pane"; '
+  printf 'echo "Available tools: search, edit, test, review"; '
+  printf 'echo "Repo: %s-demo"; ' "$mode"
+  printf 'echo "Author: Demo Author <demo@example.invalid>"; '
+  printf 'echo; echo "Suggested prompt:"; '
+  printf 'echo "  Inspect the staged screenshot config and summarize the next safe commit."; '
   printf 'exec ${SHELL:-bash} -i'
+}
+
+real_agent_command() {
+  local mode="$1"
+  case "$mode" in
+    hermes) printf 'hermes --tui' ;;
+    codex) printf 'codex' ;;
+    *) mock_agent_command "$mode" ;;
+  esac
 }
 
 show_session() {
   local mode="${1:-hermes}"
   local repo
-  repo="$(prepare_demo_repo)"
+  repo="$(prepare_demo_repo "$mode")"
 
   local script_dir="$ROOT/configs/shared/term-scripts"
   local session="demo-${mode}"
   local agent_command
-  agent_command="$(mock_agent_command "$mode")"
+  if [ "${AGENTIC_WORKBENCH_REAL_AGENT:-0}" = "1" ]; then
+    agent_command="$(real_agent_command "$mode")"
+  else
+    agent_command="$(mock_agent_command "$mode")"
+  fi
 
   case "$mode" in
     hermes)
@@ -78,15 +124,52 @@ show_session() {
   esac
 }
 
+kill_session() {
+  local mode="${1:-all}"
+  case "$mode" in
+    all)
+      tmux kill-session -t demo-hermes 2>/dev/null || true
+      tmux kill-session -t demo-codex 2>/dev/null || true
+      tmux kill-session -t demo-nav 2>/dev/null || true
+      ;;
+    hermes|codex|nav)
+      tmux kill-session -t "demo-$mode" 2>/dev/null || true
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+reset_demo() {
+  local mode="${1:-all}"
+  kill_session "$mode"
+  case "$mode" in
+    all)
+      rm -rf "$DEMO_ROOT/hermes-demo" "$DEMO_ROOT/codex-demo" "$DEMO_ROOT/nav-demo"
+      ;;
+    hermes|codex|nav)
+      rm -rf "$DEMO_ROOT/${mode}-demo"
+      ;;
+  esac
+}
+
 case "${1:-}" in
   prepare)
-    prepare_demo_repo
+    prepare_demo_repo "${2:-workbench}"
     ;;
   show)
     show_session "${2:-hermes}"
     ;;
+  reset)
+    reset_demo "${2:-all}"
+    ;;
+  kill)
+    kill_session "${2:-all}"
+    ;;
   path)
-    echo "$DEMO_ROOT/example-app"
+    echo "$DEMO_ROOT/${2:-workbench}-demo"
     ;;
   -h|--help|help|"")
     usage

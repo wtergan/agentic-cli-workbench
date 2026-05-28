@@ -56,8 +56,16 @@ A third window opens the focused agent pane.
 
 ```bash
 ./scripts/doctor
-./scripts/demo-session prepare
+./scripts/demo-session prepare hermes
 ./scripts/demo-session show hermes
+```
+
+For the Codex screenshot layout:
+
+```bash
+./scripts/demo-session kill hermes
+./scripts/demo-session prepare codex
+./scripts/demo-session show codex
 ```
 
 Copy or symlink the pieces you want:

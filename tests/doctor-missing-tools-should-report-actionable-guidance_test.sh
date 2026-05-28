@@ -10,4 +10,4 @@ trap 'rm -rf "$tmp_dir"' EXIT
 output="$(PATH="$tmp_dir" /usr/bin/bash "$ROOT/scripts/doctor" 2>&1 || true)"
 
 assert_contains "$output" "Missing required tools:"
-assert_contains "$output" "./scripts/demo-session prepare"
+assert_contains "$output" "./scripts/demo-session prepare hermes"

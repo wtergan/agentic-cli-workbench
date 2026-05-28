@@ -36,10 +36,9 @@ fi
 
 echo
 echo "Next:"
-echo "  ./scripts/demo-session prepare"
+echo "  ./scripts/demo-session prepare hermes"
 echo "  ./scripts/demo-session show hermes"
 
 if ((${#missing_required[@]} > 0)); then
   exit 1
 fi
-
