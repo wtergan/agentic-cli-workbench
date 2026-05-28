@@ -1,0 +1,12 @@
+# Public illustrative config only. Do not paste live auth, trust roots, or
+# machine-specific state into a public repo.
+
+model = "gpt-5"
+approval_policy = "on-request"
+
+[profiles.plan]
+reasoning_effort = "high"
+
+[profiles.implement]
+reasoning_effort = "medium"
+
