@@ -35,11 +35,11 @@ goal_ready: true
 
 ## Success Criteria
 
-- [ ] Demo fixture script creates neutral repos/files with fake git history.
-- [ ] Demo session command launches Hermes-like, Codex-like, and navigation-heavy
+- [x] Demo fixture script creates neutral repos/files with fake git history.
+- [x] Demo session command launches Hermes-like, Codex-like, and navigation-heavy
       layouts.
-- [ ] Screenshot checklist covers terminal size, theme, redaction, and privacy.
-- [ ] `screenshots/` contains sanitized captures or placeholders with exact
+- [x] Screenshot checklist covers terminal size, theme, redaction, and privacy.
+- [x] `screenshots/` contains sanitized captures or placeholders with exact
       capture steps.
 
 ## Architecture Diagram
@@ -58,20 +58,20 @@ graph TD
 
 ## Execution Steps
 
-- [ ] Create demo fixtures.
+- [x] Create demo fixtures.
   - ACTION: generate neutral project directories, files, and git commits.
   - IMPLEMENT: use fake author data local to the demo repo if git identity is
     needed.
   - VALIDATE: `git log --format=fuller` shows no personal email.
 
-- [ ] Create demo launcher.
+- [x] Create demo launcher.
   - ACTION: add `scripts/demo-session` with modes for `hermes`, `codex`, and
     `nav`.
   - IMPLEMENT: prefer same tmux layout engine; allow mock agent panes when real
     tools are unavailable.
   - VALIDATE: tmux command log tests or manual smoke run.
 
-- [ ] Capture public visuals.
+- [x] Capture public visuals.
   - ACTION: capture full terminal screenshots after running demo modes.
   - IMPLEMENT: crop only terminal content; avoid OS title bars if they add no
     value.

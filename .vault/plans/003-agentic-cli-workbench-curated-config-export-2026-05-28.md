@@ -37,12 +37,12 @@ goal_ready: true
 
 ## Success Criteria
 
-- [ ] Public repo has `configs/shared/` for tmux, yazi, lazygit, term scripts,
+- [x] Public repo has `configs/shared/` for tmux, yazi, lazygit, term scripts,
       and shell helpers.
-- [ ] Public repo has `configs/windows-wsl/` for WezTerm and WSL notes.
-- [ ] Public repo has `configs/macos/` for Ghostty and macOS notes.
-- [ ] Export checklist or script documents the allowlist and denylist.
-- [ ] Privacy checks pass over exported files.
+- [x] Public repo has `configs/windows-wsl/` for WezTerm and WSL notes.
+- [x] Public repo has `configs/macos/` for Ghostty and macOS notes.
+- [x] Export checklist or script documents the allowlist and denylist.
+- [x] Privacy checks pass over exported files.
 
 ## Architecture Diagram
 
@@ -65,19 +65,19 @@ graph TD
 
 ## Execution Steps
 
-- [ ] Define public export map.
+- [x] Define public export map.
   - ACTION: create `docs/export-policy.md` or `scripts/export-public-subset`.
   - IMPLEMENT: include allowlist for shared workbench files and denylist for
     private/host/live state.
   - VALIDATE: manual review plus `rg` privacy terms.
 
-- [ ] Copy shared terminal workbench files.
+- [x] Copy shared terminal workbench files.
   - FILES: `ide`, agent wrappers, tmux config, yazi, lazygit, `tmux-fzf-*`,
     `tmux-notify-hook`, `tmux-validate`, `weztheme`, `ghosttheme`.
   - GOTCHA: replace hardcoded private paths with generic examples or docs.
   - VALIDATE: shell syntax checks for scripts.
 
-- [ ] Copy platform examples.
+- [x] Copy platform examples.
   - FILES: WezTerm config examples, Ghostty config examples, package manifests.
   - IMPLEMENT: use minimal public package lists instead of raw host snapshots.
   - VALIDATE: privacy and portability review.

@@ -40,12 +40,12 @@ goal_ready: true
 
 ## Success Criteria
 
-- [ ] New repo folder or worktree exists with public-safe skeleton.
-- [ ] README includes screenshots placeholders, concept, quickstart, platform
+- [x] New repo folder or worktree exists with public-safe skeleton.
+- [x] README includes screenshots placeholders, concept, quickstart, platform
       split, command table, and "intentionally not included" section.
-- [ ] Docs skeleton includes `overview.md`, `windows-wsl.md`, `macos.md`,
+- [x] Docs skeleton includes `overview.md`, `windows-wsl.md`, `macos.md`,
       `tmux-layouts.md`, `agent-workflows.md`, and `security-and-sanitization.md`.
-- [ ] Commit guidance is documented for this repo using uppercase atomic types.
+- [x] Commit guidance is documented for this repo using uppercase atomic types.
 
 ## Architecture Diagram
 
@@ -77,19 +77,19 @@ graph TD
 
 ## Execution Steps
 
-- [ ] Create public repo folder and baseline files.
+- [x] Create public repo folder and baseline files.
   - ACTION: create `README.md`, `LICENSE`, `.gitignore`, `docs/`,
     `configs/`, `scripts/`, `examples/`, `screenshots/`, and `packages/`.
   - FILES: new repo root.
   - VALIDATE: `find . -maxdepth 3 -type f | sort`.
 
-- [ ] Draft narrative README.
+- [x] Draft narrative README.
   - ACTION: explain the workbench as agent pane + file navigation + git state +
     theme coherence.
   - IMPLEMENT: include platform comparison table and "not included" boundary.
   - VALIDATE: manual read for clarity and privacy.
 
-- [ ] Add docs placeholders.
+- [x] Add docs placeholders.
   - ACTION: add one-page docs for overview, platform setup, layouts, workflow,
     and sanitization.
   - GOTCHA: keep details concise until config export confirms exact paths.

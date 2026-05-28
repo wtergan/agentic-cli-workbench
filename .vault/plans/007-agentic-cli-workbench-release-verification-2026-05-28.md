@@ -35,12 +35,12 @@ goal_ready: true
 
 ## Success Criteria
 
-- [ ] All shell scripts pass syntax checks and relevant tests.
-- [ ] README/docs links, quickstart, and platform instructions are coherent.
-- [ ] Secret/path/account scans pass across files, screenshots metadata, and git
+- [x] All shell scripts pass syntax checks and relevant tests.
+- [x] README/docs links, quickstart, and platform instructions are coherent.
+- [x] Secret/path/account scans pass across files, screenshots metadata, and git
       history where practical.
-- [ ] Commit history uses atomic uppercase subjects and no broad mixed commits.
-- [ ] Final evidence packet lists artifacts, commands, screenshots reviewed,
+- [x] Commit history uses atomic uppercase subjects and no broad mixed commits.
+- [x] Final evidence packet lists artifacts, commands, screenshots reviewed,
       limitations, and publication readiness.
 
 ## Architecture Diagram
@@ -60,23 +60,23 @@ graph TD
 
 ## Execution Steps
 
-- [ ] Run technical checks.
+- [x] Run technical checks.
   - ACTION: run tests, shell syntax checks, and demo/doctor validation.
   - VALIDATE: record exact commands and pass/fail output in goal progress.
 
-- [ ] Run privacy and public-history review.
+- [x] Run privacy and public-history review.
   - ACTION: scan working tree and git history for emails, private paths,
     usernames, local project names, auth, tokens, and raw screenshots.
   - GOTCHA: check image metadata and lazygit/demo git identity.
   - VALIDATE: no findings or documented user-approved exceptions.
 
-- [ ] Review commit structure.
+- [x] Review commit structure.
   - ACTION: inspect commit log for uppercase atomic subjects and concise bodies.
   - IMPLEMENT: fix local unpublished history only with explicit awareness of
     what will change.
   - VALIDATE: `git log --oneline` and selected full commit messages.
 
-- [ ] Prepare final handoff.
+- [x] Prepare final handoff.
   - ACTION: update goal progress/handoff with release state, commands, residual
     risks, and next publication step.
   - VALIDATE: final summary is enough for user review or native `/goal` resume.

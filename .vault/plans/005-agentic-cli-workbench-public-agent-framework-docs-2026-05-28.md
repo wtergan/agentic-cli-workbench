@@ -32,11 +32,11 @@ goal_ready: true
 
 ## Success Criteria
 
-- [ ] `docs/agent-workflows.md` explains research -> plan -> implement ->
+- [x] `docs/agent-workflows.md` explains research -> plan -> implement ->
       validate, native `/goal`, `.vault`, and specialist roles.
-- [ ] `examples/AGENTS.public.md` contains portable project instructions.
-- [ ] `examples/codex-config.public.toml` shows only safe illustrative config.
-- [ ] Commit convention is documented in public repo and source framework.
+- [x] `examples/AGENTS.public.md` contains portable project instructions.
+- [x] `examples/codex-config.public.toml` shows only safe illustrative config.
+- [x] Commit convention is documented in public repo and source framework.
 
 ## Architecture Diagram
 
@@ -52,17 +52,17 @@ graph TD
 
 ## Execution Steps
 
-- [ ] Draft public workflow doc.
+- [x] Draft public workflow doc.
   - ACTION: summarize the workflow without copying private details wholesale.
   - IMPLEMENT: include `.vault` as operational memory and `/goal` as runtime.
   - VALIDATE: privacy review.
 
-- [ ] Add public examples.
+- [x] Add public examples.
   - ACTION: create `examples/AGENTS.public.md` and safe Codex config examples.
   - IMPLEMENT: avoid MCP URLs, auth, trust roots, machine paths, and local names.
   - VALIDATE: `rg` privacy check.
 
-- [ ] Wire commit convention.
+- [x] Wire commit convention.
   - ACTION: ensure source framework and public docs both specify uppercase atomic
     commit format.
   - IMPLEMENT: subject line uses `TYPE: summary`; optional body has at most four

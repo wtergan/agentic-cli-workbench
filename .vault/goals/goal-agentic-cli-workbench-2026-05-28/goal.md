@@ -22,15 +22,15 @@ subset of this dotfiles repo.
 
 ## Acceptance Criteria
 
-- [ ] `agentic-cli-workbench` has a polished public README and docs.
-- [ ] Public repo includes only curated configs/scripts/examples.
-- [ ] Demo sessions or screenshots show Hermes/Codex/yazi/lazygit workflows
+- [x] `agentic-cli-workbench` has a polished public README and docs.
+- [x] Public repo includes only curated configs/scripts/examples.
+- [x] Demo sessions or screenshots show Hermes/Codex/yazi/lazygit workflows
       without private data.
-- [ ] Windows/WSL and macOS setup paths are clearly differentiated.
-- [ ] Public agent workflow docs explain `.vault`, `/goal`, and the uppercase
+- [x] Windows/WSL and macOS setup paths are clearly differentiated.
+- [x] Public agent workflow docs explain `.vault`, `/goal`, and the uppercase
       atomic commit convention.
-- [ ] Validation and privacy checks pass before any push.
-- [ ] Final release gate reviews tests, privacy scans, screenshots, docs, and
+- [x] Validation and privacy checks pass before any push.
+- [x] Final release gate reviews tests, privacy scans, screenshots, docs, and
       atomic uppercase commit history.
 
 ## Non-Goals and Approval Boundaries

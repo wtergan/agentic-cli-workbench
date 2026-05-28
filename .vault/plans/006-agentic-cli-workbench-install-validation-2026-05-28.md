@@ -35,12 +35,12 @@ goal_ready: true
 
 ## Success Criteria
 
-- [ ] `scripts/doctor` or equivalent checks required tools and explains missing
+- [x] `scripts/doctor` or equivalent checks required tools and explains missing
       dependencies.
-- [ ] Setup docs separate prerequisites, optional agents, theme scripts, and demo
+- [x] Setup docs separate prerequisites, optional agents, theme scripts, and demo
       screenshot workflow.
-- [ ] Tests cover script syntax and demo/doctor behavior.
-- [ ] README has a clear "try the demo first" path.
+- [x] Tests cover script syntax and demo/doctor behavior.
+- [x] README has a clear "try the demo first" path.
 
 ## Architecture Diagram
 
@@ -56,18 +56,18 @@ graph TD
 
 ## Execution Steps
 
-- [ ] Add doctor script.
+- [x] Add doctor script.
   - ACTION: check `tmux`, `fzf`, `rg`, `yazi`, `lazygit`, terminal theme
     script prerequisites, and optional agent commands.
   - IMPLEMENT: report only; do not install by default.
   - VALIDATE: shell tests with stubbed PATH.
 
-- [ ] Add setup docs.
+- [x] Add setup docs.
   - ACTION: document Windows/WSL and macOS setup paths.
   - IMPLEMENT: separate shared core from terminal-specific pieces.
   - VALIDATE: link check and manual review.
 
-- [ ] Add validation workflow.
+- [x] Add validation workflow.
   - ACTION: document smoke commands and expected output.
   - IMPLEMENT: include demo session validation and privacy checks for contributors.
   - VALIDATE: run tests and `bash -n`.
