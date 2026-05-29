@@ -1,7 +1,7 @@
 ---
 project: "agentic-cli-workbench"
-date: "2026-05-28"
-status: "Release-ready"
+date: "2026-05-29"
+status: "Screenshot review"
 progress: 100
 ---
 
@@ -17,6 +17,11 @@ implementation detail in `.vault/plans/`.
 - The next public-facing effort is `agentic-cli-workbench`: a curated showcase
   repo that presents the tmux agent workbench without mirroring private host
   snapshots, secrets, local projects, or live account state.
+- Current screenshot pass is staged for user capture: Hermes opens
+  `hermes --tui` in the left reference pane, and Codex starts with the requested
+  yazi/yazi/lazygit first window.
+- The README now includes the approved macOS Codex-IDE GoodNotes screenshot as
+  the navigation-cockpit example.
 - Existing evidence lives in `docs/terminal-tooling-reference.md`,
   `docs/codex-agentic-framework.md`, `configs/shared/term-scripts/`,
   `configs/shared/tmux/tmux.conf`, `configs/shared/yazi/`,

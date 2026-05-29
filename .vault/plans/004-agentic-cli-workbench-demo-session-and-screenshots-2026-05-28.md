@@ -38,6 +38,11 @@ goal_ready: true
 - [x] Demo fixture script creates neutral repos/files with fake git history.
 - [x] Demo session command launches Hermes-like, Codex-like, and navigation-heavy
       layouts.
+- [x] Codex screenshot demo window 1 uses left `yazi`, top-right `yazi`, and
+      bottom-right `lazygit`.
+- [x] Hermes screenshot demo window 1 opens `hermes --tui` in the left pane when
+      Hermes is installed.
+- [x] README includes the approved macOS Codex-IDE GoodNotes screenshot.
 - [x] Screenshot checklist covers terminal size, theme, redaction, and privacy.
 - [x] `screenshots/` contains sanitized captures or placeholders with exact
       capture steps.
@@ -135,3 +140,9 @@ Final evidence:
 ## Progress Log
 
 - 2026-05-28: Plan created.
+- 2026-05-29: Reopened for screenshot-template delta. Codex demo now starts on
+  the requested yazi/yazi/lazygit first window, and Hermes demo opens
+  `hermes --tui` in the left reference pane when available.
+- 2026-05-29: Added user-approved
+  `screenshots/codex-ide-macos-goodnotes.png` to README as the macOS Codex-IDE
+  workflow example.

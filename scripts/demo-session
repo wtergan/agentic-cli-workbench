@@ -15,17 +15,29 @@ Usage:
 
 Creates neutral demo data and launches public-safe tmux layouts.
 
-By default, the agent pane is a mock public-safe agent screen. Set
-AGENTIC_WORKBENCH_REAL_AGENT=1 only when you have reviewed that the real agent
-TUI will not expose account, session, path, or billing details.
+Hermes demos open `hermes --tui` in the left reference pane when Hermes is
+available, then fall back to a public-safe mock pane. Codex demos open a
+navigation-first first window: left `yazi`, top-right `yazi`, and bottom-right
+`lazygit`.
+
+Set AGENTIC_WORKBENCH_REAL_AGENT=1 only when you have reviewed that the real
+Codex focused window will not expose account, session, path, or billing details.
 USAGE
 }
 
 prepare_demo_repo() {
   local mode="${1:-workbench}"
   local repo="$DEMO_ROOT/${mode}-demo"
+  local title="$mode"
+  case "$mode" in
+    codex) title="Codex" ;;
+    hermes) title="Hermes" ;;
+    nav) title="Navigation" ;;
+    workbench) title="Workbench" ;;
+  esac
+
   mkdir -p "$repo/src" "$repo/docs" "$repo/tests" "$repo/config"
-  printf '# %s Demo\n\nNeutral demo project for public workbench screenshots.\n' "${mode^}" > "$repo/README.md"
+  printf '# %s Demo\n\nNeutral demo project for public workbench screenshots.\n' "$title" > "$repo/README.md"
   printf 'export function greet(name) {\n  return `hello ${name}`;\n}\n' > "$repo/src/greet.js"
   printf 'export const workflow = {\n  agent: "%s",\n  review: true,\n};\n' "$mode" > "$repo/config/workflow.js"
   printf 'Workbench notes for public demo captures.\n' > "$repo/docs/workflow.md"
@@ -85,34 +97,143 @@ real_agent_command() {
   esac
 }
 
+quote_command_path() {
+  printf '%q' "$1"
+}
+
+hermes_binary() {
+  if command -v hermes >/dev/null 2>&1; then
+    command -v hermes
+  elif [ -x "$HOME/.local/bin/hermes" ]; then
+    printf '%s/.local/bin/hermes\n' "$HOME"
+  else
+    return 1
+  fi
+}
+
+codex_agent_command() {
+  if [ "${AGENTIC_WORKBENCH_REAL_AGENT:-0}" = "1" ]; then
+    real_agent_command codex
+  else
+    mock_agent_command codex
+  fi
+}
+
+hermes_reference_command() {
+  local binary
+  if [ -n "${AGENTIC_WORKBENCH_HERMES_TUI_COMMAND:-}" ]; then
+    printf '%s' "$AGENTIC_WORKBENCH_HERMES_TUI_COMMAND"
+  elif binary="$(hermes_binary)"; then
+    printf '%s --tui' "$(quote_command_path "$binary")"
+  else
+    mock_agent_command hermes
+  fi
+}
+
+hermes_agent_command() {
+  local binary
+  if [ -n "${AGENTIC_WORKBENCH_HERMES_COMMAND:-}" ]; then
+    printf '%s' "$AGENTIC_WORKBENCH_HERMES_COMMAND"
+  elif binary="$(hermes_binary)"; then
+    quote_command_path "$binary"
+  else
+    mock_agent_command hermes
+  fi
+}
+
+yazi_command() {
+  if command -v yazi >/dev/null 2>&1; then
+    printf 'yazi'
+  else
+    printf 'pwd; find . -maxdepth 2 -type f | sort; exec ${SHELL:-bash} -i'
+  fi
+}
+
+lazygit_command() {
+  if command -v lazygit >/dev/null 2>&1; then
+    printf 'lazygit'
+  else
+    printf 'git status --short; exec ${SHELL:-bash} -i'
+  fi
+}
+
+send_pane_command() {
+  local target="$1"
+  local command="$2"
+  tmux send-keys -t "$target" "clear; $command" Enter
+}
+
+attach_or_switch() {
+  local session="$1"
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$session"
+  elif [ -t 0 ] && [ -t 1 ]; then
+    tmux attach-session -t "$session"
+  else
+    echo "Session ready: $session"
+    echo "Attach with: tmux attach -t $session"
+  fi
+}
+
+create_navigation_window() {
+  local session="$1"
+  local window_name="$2"
+  local workdir="$3"
+
+  tmux split-window -h -t "$session:$window_name" -c "$workdir"
+  tmux split-window -v -t "$session:$window_name.2" -c "$workdir"
+
+  send_pane_command "$session:$window_name.1" "$(yazi_command)"
+  send_pane_command "$session:$window_name.2" "$(yazi_command)"
+  send_pane_command "$session:$window_name.3" "$(lazygit_command)"
+  tmux select-pane -t "$session:$window_name.1"
+}
+
+show_codex_session() {
+  local session="$1"
+  local repo="$2"
+
+  if tmux has-session -t "$session" 2>/dev/null; then
+    attach_or_switch "$session"
+    return
+  fi
+
+  tmux new-session -d -s "$session" -c "$repo" -n 1
+  create_navigation_window "$session" 1 "$repo"
+
+  tmux new-window -n codex -t "$session" -c "$repo"
+  send_pane_command "$session:codex.1" "$(codex_agent_command)"
+
+  tmux select-window -t "$session:1"
+  tmux select-pane -t "$session:1.1"
+  attach_or_switch "$session"
+}
+
+show_hermes_session() {
+  local session="$1"
+  local repo="$2"
+  local script_dir="$ROOT/configs/shared/term-scripts"
+
+  IDE_DEFAULT_SESSION_NAME="$session" \
+  IDE_AGENT_WINDOW_NAME="hermes" \
+  IDE_REFERENCE_AGENT_COMMAND="$(hermes_reference_command)" \
+  IDE_AGENT_COMMAND="$(hermes_agent_command)" \
+  "$script_dir/ide" "$session" "$repo"
+}
+
 show_session() {
   local mode="${1:-hermes}"
   local repo
   repo="$(prepare_demo_repo "$mode")"
 
-  local script_dir="$ROOT/configs/shared/term-scripts"
   local session="demo-${mode}"
-  local agent_command
-  if [ "${AGENTIC_WORKBENCH_REAL_AGENT:-0}" = "1" ]; then
-    agent_command="$(real_agent_command "$mode")"
-  else
-    agent_command="$(mock_agent_command "$mode")"
-  fi
 
   case "$mode" in
     hermes)
-      IDE_DEFAULT_SESSION_NAME="$session" \
-      IDE_AGENT_WINDOW_NAME="hermes" \
-      IDE_REFERENCE_AGENT_COMMAND="$agent_command" \
-      IDE_AGENT_COMMAND="$agent_command" \
-      "$script_dir/ide" "$session" "$repo"
+      show_hermes_session "$session" "$repo"
       ;;
     codex)
-      IDE_DEFAULT_SESSION_NAME="$session" \
-      IDE_AGENT_WINDOW_NAME="codex" \
-      IDE_REFERENCE_AGENT_COMMAND="$agent_command" \
-      IDE_AGENT_COMMAND="$agent_command" \
-      "$script_dir/ide" "$session" "$repo"
+      show_codex_session "$session" "$repo"
       ;;
     nav)
       "$ROOT/scripts/demo-yazi-grid" "$session" "$repo"

@@ -6,9 +6,15 @@ Windows/WSL and macOS.
 
 This repo is a public, curated version of a private daily-driver setup. It is
 meant to show the shape of the workflow without publishing private overlays,
-host snapshots, live agent state, account details, or raw screenshots.
+host snapshots, live agent state, account details, or unreviewed screenshots.
 
 ![Hermes workbench demo](screenshots/hermes-demo-wsl.png)
+
+![Codex IDE macOS GoodNotes preview](screenshots/codex-ide-macos-goodnotes.png)
+
+Codex-IDE on macOS can also work as a navigation cockpit: here the left `yazi`
+pane previews handwritten GoodNotes PDF pages while the right side keeps the
+converted Markdown note and git state visible.
 
 ## What This Is
 
@@ -35,6 +41,12 @@ The default session creates two reference windows with three panes:
 
 A third window opens the focused agent pane.
 
+The screenshot demos use that same shape with mode-specific first windows:
+
+- Hermes: left `hermes --tui`, top-right `yazi`, bottom-right `lazygit`.
+- Codex: left `yazi`, top-right `yazi`, bottom-right `lazygit`, with a second
+  focused Codex window for agent captures.
+
 ## Platform Split
 
 | Layer | Windows/WSL | macOS |
@@ -49,8 +61,8 @@ A third window opens the focused agent pane.
 - `hermes-ide`: Hermes agent window plus yazi and lazygit reference panes.
 - `codex-ide`: Codex CLI launcher; also useful as a navigation cockpit when
   using the Codex app as the primary agent interface.
-- `scripts/demo-session`: builds neutral demo fixtures and can launch public-safe
-  tmux sessions for screenshots.
+- `scripts/demo-session`: builds neutral demo fixtures and launches screenshot
+  tmux sessions for Hermes, Codex, and navigation-heavy captures.
 
 ## Quickstart
 
@@ -60,7 +72,7 @@ A third window opens the focused agent pane.
 ./scripts/demo-session show hermes
 ```
 
-For the Codex screenshot layout:
+For the Codex screenshot layout, window 1 opens the yazi/yazi/lazygit template:
 
 ```bash
 ./scripts/demo-session kill hermes
@@ -84,8 +96,8 @@ and [docs/macos.md](docs/macos.md) for the fuller walkthrough.
 ## Intentionally Not Included
 
 - private overlays, host snapshots, generated package inventories, or auth state
-- raw screenshots containing real repos, git identity, account data, or local
-  paths
+- unreviewed screenshots containing secrets, git identity, account data, or
+  sensitive local paths
 - live Codex/Hermes/OpenCode configuration with credentials or machine-specific
   trust roots
 - a one-command destructive installer

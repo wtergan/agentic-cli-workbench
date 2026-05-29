@@ -5,7 +5,7 @@
   <rect x="48" y="104" width="920" height="720" fill="#fffaf2" stroke="#a67c7c" stroke-width="2"/>
   <rect x="992" y="104" width="560" height="342" fill="#fffaf2" stroke="#6d7f5f" stroke-width="2"/>
   <rect x="992" y="482" width="560" height="342" fill="#fffaf2" stroke="#6d7f5f" stroke-width="2"/>
-  <text x="80" y="158" font-family="Iosevka, Menlo, monospace" font-size="34" fill="#9b5757">CODEX AGENT</text>
+  <text x="80" y="158" font-family="Iosevka, Menlo, monospace" font-size="34" fill="#9b5757">yazi</text>
   <text x="1024" y="158" font-family="Iosevka, Menlo, monospace" font-size="28" fill="#235aa6">yazi</text>
   <text x="1024" y="536" font-family="Iosevka, Menlo, monospace" font-size="28" fill="#236b34">lazygit</text>
   <text x="80" y="226" font-family="Iosevka, Menlo, monospace" font-size="22" fill="#6a6258">Available tools: search, edit, test, review</text>

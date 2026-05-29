@@ -37,8 +37,7 @@ SVG
 }
 
 write_svg "hermes-workbench.svg" "Hermes Workbench" "HERMES AGENT" "yazi" "lazygit"
-write_svg "codex-workbench.svg" "Codex Navigation Workbench" "CODEX AGENT" "yazi" "lazygit"
+write_svg "codex-workbench.svg" "Codex Navigation Workbench" "yazi" "yazi" "lazygit"
 
 echo "Generated $OUT/hermes-workbench.svg"
 echo "Generated $OUT/codex-workbench.svg"
-

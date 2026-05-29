@@ -3,18 +3,17 @@
 ## `ide`
 
 ```text
-window 1
+reference windows
 +-----------------------------+----------------------+
 | agent or shell              | yazi                 |
 |                             +----------------------+
 |                             | lazygit              |
 +-----------------------------+----------------------+
 
-window 2
-same three-pane reference layout
-
-window 3
-focused agent pane named after the wrapper
+focused window
++----------------------------------------------------+
+| agent pane named after the wrapper                 |
++----------------------------------------------------+
 ```
 
 Run it directly:
@@ -31,6 +30,27 @@ ide workbench ~/Code/example-app
 - `opencode-ide` sets `IDE_AGENT_COMMAND=opencode`.
 - `openclaw-ide` sets `IDE_AGENT_COMMAND=openclaw`.
 
+## Screenshot Demo Layouts
+
+`scripts/demo-session show hermes` uses the normal agent-reference shape, with
+`hermes --tui` in the left pane when Hermes is installed.
+
+`scripts/demo-session show codex` makes window 1 a navigation cockpit:
+
+```text
+window 1
++-----------------------------+----------------------+
+| yazi                        | yazi                 |
+|                             +----------------------+
+|                             | lazygit              |
++-----------------------------+----------------------+
+
+window codex
++----------------------------------------------------+
+| mock Codex pane, or real Codex with real-agent mode |
++----------------------------------------------------+
+```
+
 ## Useful tmux Bindings
 
 Prefix is the backtick key.
@@ -44,4 +64,3 @@ Prefix is the backtick key.
 | `` ` s`` | file picker popup |
 | `` ` g`` | ripgrep popup |
 | `` ` O`` | start or attach workbench layout |
-

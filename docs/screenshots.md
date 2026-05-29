@@ -1,9 +1,11 @@
 # Screenshots
 
 The files in `screenshots/` are public-safe demo visuals. The README uses a
-real Windows/WSL tmux capture from a neutral Hermes demo repo:
+real Windows/WSL tmux capture from a neutral Hermes demo repo plus an approved
+macOS Codex-IDE capture showing the GoodNotes/yazi workflow:
 
 - `screenshots/hermes-demo-wsl.png`
+- `screenshots/codex-ide-macos-goodnotes.png`
 
 The SVG files are generated fallback visuals from neutral text fixtures.
 
@@ -14,8 +16,14 @@ Regenerate them with:
 ```
 
 For real terminal captures, use the neutral demo repos and screenshot-ready tmux
-sessions. These sessions use real tmux, yazi, and lazygit panes, but the agent
-pane is a public-safe mock by default so account/session details do not leak.
+sessions. These sessions use real tmux, yazi, and lazygit panes with neutral
+demo repositories under `demo/workspace/`.
+
+| Mode | First window | Focused agent window |
+|---|---|---|
+| `hermes` | left `hermes --tui`, top-right `yazi`, bottom-right `lazygit` | `hermes` when installed |
+| `codex` | left `yazi`, top-right `yazi`, bottom-right `lazygit` | public-safe mock Codex unless real-agent mode is enabled |
+| `nav` | left `yazi`, top-right `yazi`, bottom-right `lazygit` | none |
 
 ```bash
 ./scripts/demo-session reset all
@@ -36,15 +44,22 @@ Windows screenshot tool after the tmux layout is visible. The generated demo
 repositories live under `demo/workspace/` and use `Demo Author
 <demo@example.invalid>`.
 
-If you intentionally want the real agent TUI in the left pane, run with:
+If you intentionally want the real Codex CLI in the focused Codex window, run
+with:
 
 ```bash
-AGENTIC_WORKBENCH_REAL_AGENT=1 ./scripts/demo-session show hermes
 AGENTIC_WORKBENCH_REAL_AGENT=1 ./scripts/demo-session show codex
 ```
 
-Only use real-agent mode after checking that the agent screen will not expose
-account, billing, session, path, model entitlement, or private workspace details.
+Hermes opens the real `hermes --tui` reference pane automatically when the
+binary is available. Only use real agent screens after checking that they will
+not expose account, billing, session, path, model entitlement, or private
+workspace details.
 
 Then inspect the capture for local paths, emails, account names, real commit
 history, and private filenames before publishing.
+
+Approved captures can intentionally show useful local workflow context when the
+content has been reviewed for secrets and account data. The macOS Codex-IDE
+GoodNotes screenshot is one such capture: it shows a handwritten PDF preview,
+converted Markdown, and lazygit state to demonstrate layout flexibility.

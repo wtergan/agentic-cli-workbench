@@ -15,10 +15,15 @@
 
 ## Latest Known State
 
-Implementation is complete and release-ready for user review. The public repo
+Implementation is complete and ready for screenshot review. The public repo
 contains a README, AGENTS instructions, docs, sanitized shared configs, platform
 examples, curated package hints, demo/session tooling, generated SVG screenshots,
 tests, privacy scanner, and release evidence.
+
+The 2026-05-29 screenshot delta is applied locally: `./scripts/demo-session show
+hermes` opens `hermes --tui` in the left reference pane when Hermes is
+installed, and `./scripts/demo-session show codex` opens window 1 as left
+`yazi`, top-right `yazi`, and bottom-right `lazygit`.
 
 The user also requested a standing commit convention for future Codex work:
 atomic commits with uppercase type prefixes such as `FEAT:`, a one-line subject,
@@ -34,4 +39,5 @@ and at most four information-dense one-line body bullets.
 
 ## Next Action
 
-Review the repo locally. If approved, create the GitHub remote and push `main`.
+Capture and review the Mac/Windows demo screenshots. Add only the approved
+screenshots to `screenshots/`, then re-run release checks before pushing.
